@@ -1,0 +1,34 @@
+# Lokale database van de productiestudio. Eigen project, netwerk en volume: strikt gescheiden van
+# de Rhadix-containers. Alleen bereikbaar op 127.0.0.1. Het wachtwoord staat in .env (niet in git).
+name: makelaarsstudio
+
+services:
+  db:
+    # postgres:16-alpine (PG 16.15, image van 21-10-2026), vastgezet op digest
+    image: postgres@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab
+    container_name: makelaarsstudio-db
+    environment:
+      POSTGRES_DB: studio
+      POSTGRES_USER: studio
+      POSTGRES_PASSWORD: ${STUDIO_DB_WACHTWOORD:?STUDIO_DB_WACHTWOORD ontbreekt in .env}
+    ports:
+      - "127.0.0.1:5490:5432"
+    volumes:
+      - db:/var/lib/postgresql/data
+    networks:
+      - studio
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U studio -d studio"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    labels:
+      nl.makelaarsplatform.onderdeel: studio-db
+
+volumes:
+  db:
+    name: makelaarsstudio_db
+
+networks:
+  studio:
+    name: makelaarsstudio_net

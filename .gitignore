@@ -1,0 +1,11 @@
+node_modules/
+dist/
+# Geheimen
+.env
+.env.*
+!.env.voorbeeld
+*.key
+*.pem
+# Aanleveringen, bronbestanden en versies: klantgegevens, nooit in git
+data/
+.DS_Store

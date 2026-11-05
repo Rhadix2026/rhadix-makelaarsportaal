@@ -1,0 +1,37 @@
+{
+  "name": "makelaarsplatform-studio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Interne productiestudio voor woningwebsites; stuurt de bestaande generator aan (productie-instantie).",
+  "engines": {
+    "node": ">=24.11 <25"
+  },
+  "scripts": {
+    "db:start": "docker compose --env-file .env -f compose.yaml up -d --wait",
+    "db:stop": "docker compose --env-file .env -f compose.yaml stop",
+    "db:migreer": "tsx api/src/migreer.ts",
+    "api": "tsx api/src/server.ts",
+    "web": "vite --config web/vite.config.ts",
+    "dev": "node scripts/dev.mjs",
+    "build": "vite build --config web/vite.config.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "fastify": "5.12.7",
+    "pg": "8.23.1",
+    "react": "19.1.10",
+    "react-dom": "19.1.10"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@types/pg": "8.23.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "vite": "8.3.5"
+  }
+}

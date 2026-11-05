@@ -1,0 +1,135 @@
+/* Studio-tokens, opnieuw vastgelegd naar de Rhadix-look-and-feel (AB-005): zelfde kleuren,
+   lettertype en vormtaal, zonder gedeelde code of packages. Bron (alleen gelezen):
+   rhadix/frontend/src/index.css en components/UI.jsx, 05-11-2026. */
+
+@font-face { font-family: 'Oxanium'; src: url('/fonts/Oxanium-Regular.ttf') format('truetype'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Oxanium'; src: url('/fonts/Oxanium-Medium.ttf') format('truetype'); font-weight: 500; font-display: swap; }
+@font-face { font-family: 'Oxanium'; src: url('/fonts/Oxanium-SemiBold.ttf') format('truetype'); font-weight: 600; font-display: swap; }
+@font-face { font-family: 'Oxanium'; src: url('/fonts/Oxanium-Bold.ttf') format('truetype'); font-weight: 700; font-display: swap; }
+@font-face { font-family: 'Oxanium'; src: url('/fonts/Oxanium-ExtraBold.ttf') format('truetype'); font-weight: 800; font-display: swap; }
+
+:root {
+  /* merk */
+  --navy: #1A2847;
+  --navy-diep: #0F1A30;
+  --accent: #6FA8D0;
+  --blauw-licht: #E8F2FA;
+  --sub: #8BADC5;
+
+  /* neutraal */
+  --tekst: #111827;
+  --tekst2: #374151;
+  --tekst3: #6b7280;
+  --tekst4: #9ca3af;
+  --achtergrond: #f3f4f6;
+  --vlak: #ffffff;
+  --rand: #e5e7eb;
+  --rand2: #d1d5db;
+
+  /* betekenis */
+  --groen: #16a34a;  --groen-licht: #dcfce7;
+  --amber: #b45309;  --amber-licht: #fef3c7;
+  --rood: #dc2626;   --rood-licht: #fee2e2;
+
+  /* typografie en vorm */
+  --font: 'Oxanium', -apple-system, sans-serif;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --schaduw: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.05);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #root { min-height: 100%; margin: 0; }
+body {
+  font-family: var(--font);
+  font-size: 14px;
+  letter-spacing: 0.01em;
+  background: var(--achtergrond);
+  color: var(--tekst);
+  -webkit-font-smoothing: antialiased;
+}
+button { font-family: var(--font); }
+h1, h2, h3, p { margin: 0; }
+code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+
+/* navigatie */
+.nav {
+  position: sticky; top: 0; z-index: 100;
+  height: 64px; padding: 0 32px;
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--navy); border-bottom: 1px solid rgba(255,255,255,.08);
+  box-shadow: 0 2px 12px rgba(0,0,0,.25); color: #fff;
+}
+.nav-merk { display: flex; align-items: baseline; gap: 12px; }
+.nav-naam { font-size: 18px; font-weight: 800; letter-spacing: .02em; }
+.nav-sub { font-size: 13px; color: var(--sub); font-weight: 500; }
+.nav-rechts { display: flex; align-items: center; gap: 12px; }
+.nav-label {
+  background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2);
+  border-radius: var(--radius); padding: 5px 12px; font-size: 12px; font-weight: 700; letter-spacing: .03em;
+}
+
+/* pagina */
+.pagina { max-width: 1200px; margin: 0 auto; padding: 40px 48px; }
+.titel { margin-bottom: 28px; }
+.titel-badge {
+  display: inline-flex; background: var(--blauw-licht); color: var(--navy);
+  font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 20px; margin-bottom: 12px;
+}
+.titel h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 6px; }
+.titel p { font-size: 14px; color: var(--tekst3); line-height: 1.5; }
+
+/* kaarten */
+.raster { display: grid; gap: 16px; }
+.raster-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.raster-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 960px) { .raster-4, .raster-2 { grid-template-columns: 1fr 1fr; } .pagina { padding: 28px 20px; } }
+@media (max-width: 600px) { .raster-4, .raster-2 { grid-template-columns: 1fr; } }
+.kaart {
+  background: var(--vlak); border: 1px solid var(--rand); border-radius: var(--radius-lg);
+  padding: 20px 24px; box-shadow: var(--schaduw);
+}
+.kaart h2 { font-size: 15px; font-weight: 700; margin-bottom: 14px; }
+.stat-waarde { font-size: 28px; font-weight: 800; letter-spacing: -0.03em; margin-bottom: 4px; }
+.stat-label { font-size: 13px; color: var(--tekst3); }
+.stat-sub { font-size: 12px; color: var(--tekst4); margin-top: 6px; }
+
+/* badges */
+.badge { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 20px; white-space: nowrap; display: inline-block; }
+.badge-goed { background: var(--groen-licht); color: var(--groen); }
+.badge-let-op { background: var(--amber-licht); color: var(--amber); }
+.badge-fout { background: var(--rood-licht); color: var(--rood); }
+.badge-info { background: var(--blauw-licht); color: var(--navy); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-size: 12px; padding: 3px 9px; border-radius: 6px; background: var(--achtergrond); border: 1px solid var(--rand); color: var(--tekst2); }
+
+/* tabel */
+.tabel { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.tabel td, .tabel th { overflow-wrap: anywhere; }
+.tabel th { text-align: left; font-size: 12px; font-weight: 600; color: var(--tekst3); padding: 8px 0; border-bottom: 1px solid var(--rand); }
+.tabel td { padding: 9px 0; border-bottom: 1px solid var(--rand); vertical-align: top; color: var(--tekst2); }
+.tabel tr:last-child td { border-bottom: 0; }
+.tabel td:first-child { color: var(--tekst3); width: 38%; padding-right: 12px; }
+
+/* knoppen */
+.knop {
+  border-radius: var(--radius); padding: 10px 20px; font-size: 14px; font-weight: 600; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px; transition: background .15s, border-color .15s;
+}
+.knop-primair { background: var(--navy); color: #fff; border: none; }
+.knop-primair:hover { background: var(--navy-diep); }
+.knop-lijn { background: #fff; color: var(--tekst2); border: 1px solid var(--rand2); font-weight: 500; padding: 9px 18px; }
+.knop-lijn:hover { border-color: var(--accent); }
+.knop:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+.rij { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.rij > .titel { flex: 1 1 420px; min-width: 0; }
+.kaart, .raster > * { min-width: 0; }
+@media (max-width: 600px) {
+  .nav { padding: 0 16px; }
+  .nav-sub { display: none; }
+  .pagina { padding: 24px 16px; }
+}
+.melding { padding: 12px 16px; border-radius: var(--radius); font-size: 14px; }
+.melding-fout { background: var(--rood-licht); color: #991b1b; }
+.voet { margin-top: 28px; font-size: 13px; color: var(--tekst3); }
