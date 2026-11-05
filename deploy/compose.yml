@@ -25,7 +25,7 @@ x-app: &app
     STUDIO_DB_URL: postgres://studio:${MP_DB_WACHTWOORD:?MP_DB_WACHTWOORD ontbreekt}@db:5432/studio
     STUDIO_OMGEVING: ${MP_OMGEVING:-productie}
     STUDIO_HERKOMST: ${MP_HERKOMST:?MP_HERKOMST ontbreekt}
-    STUDIO_COOKIE_SECURE: "1"
+    STUDIO_COOKIE_SECURE: ${MP_COOKIE_SECURE:-1}
     STUDIO_INACTIVITEIT_MIN: "5"
     TZ: Europe/Amsterdam
 

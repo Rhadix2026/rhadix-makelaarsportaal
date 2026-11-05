@@ -50,4 +50,5 @@ if (IS_TEST && new URL(config.dbUrl).pathname !== '/studio_test')
   throw new Error(`tests mogen alleen de database studio_test gebruiken (nu: ${new URL(config.dbUrl).pathname.slice(1)})`);
 if (IS_TEST && config.opslag === join(ROOT, 'data', 'opslag'))
   throw new Error('tests mogen de echte opslag (data/opslag) niet gebruiken; zet STUDIO_OPSLAG');
-if (!/@(127\.0\.0\.1|localhost):/.test(config.dbUrl)) throw new Error('STUDIO_DB_URL moet naar 127.0.0.1 wijzen');
+// De database is nooit extern: lokaal 127.0.0.1, online de service 'db' op het interne Compose-netwerk.
+if (!/@(127\.0\.0\.1|localhost|db):/.test(config.dbUrl)) throw new Error('STUDIO_DB_URL moet naar 127.0.0.1 (lokaal) of db (intern containernetwerk) wijzen');
