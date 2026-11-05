@@ -114,3 +114,9 @@ export async function leesTeksten(md: string) {
 }
 
 export function generatorCommit() { return git('rev-parse', 'HEAD'); }
+
+/** Beeldnormen van de generator voor originele foto's (EIS in packages/aanlevering). */
+export async function aanleverEisen(): Promise<{ minBreedte: number; goedeBreedte: number; heroBreedte: number; minFotos: number }> {
+  const { EIS } = await importeer('packages/aanlevering/index.mjs');
+  return EIS;
+}

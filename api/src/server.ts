@@ -10,7 +10,7 @@ import { alsGebruiker, databaseStatus, migreer, pool } from './db.ts';
 import { generatorStatus, profielCatalogus, profielen, standaardOntwerpsysteem } from './generator.ts';
 import { COOKIE, beeindigSessie, leesCookie, meldAan, sessieCookie, sessieGebruiker, wisCookie } from './auth.ts';
 import { leesKantoor, lijstKantoren, maakKantoor, valideerKantoor, wijzigKantoor } from './kantoren.ts';
-import { extractieVoor, herstelVerwerkingen, leverAan, overzicht, slaOp, trekIn, vraagVerwerking, wekVerwerker } from './aanlevering.ts';
+import { bulkGoedkeuren, conflictVoor, extractieVoor, herstelVerwerkingen, leverAan, overzicht, slaOp, trekIn, vraagVerwerking, wekVerwerker } from './aanlevering.ts';
 import { bewerkGegeven } from './gegevens.ts';
 import { bevestigVoorstel, leesHuisstijl, logoUitBrochure, uploadLogo } from './huisstijl.ts';
 import { miniatuur, opslagPad } from './opslag.ts';
@@ -209,7 +209,7 @@ export function bouwApp() {
     return reply.code(202).send(r.verwerking);
   });
 
-  app.put<{ Params: { id: string; sleutel: string }; Body: { actie?: string; waarde?: unknown; label?: string; eenheid?: string | null; bevestigd?: boolean } }>(
+  app.put<{ Params: { id: string; sleutel: string }; Body: { actie?: string; waarde?: unknown; label?: string; eenheid?: string | null; bevestigd?: boolean; motivering?: string } }>(
     '/api/projecten/:id/gegevens/:sleutel', { preHandler: alleenPlatform }, async (req, reply) => {
       const { id, sleutel } = req.params;
       if (!UUID.test(id)) return reply.code(404).send({ fout: 'Woningproject niet gevonden' });
@@ -217,19 +217,26 @@ export function bouwApp() {
       const r = await alsGebruiker(req.gebruiker, async (c) => {
         const p = await leesProject(c, id);
         if (!p) return { fout: 'project' as const };
-        return bewerkGegeven(c, req.gebruiker, p, sleutel, { actie: String(req.body?.actie ?? ''), ...req.body }, await extractieVoor(c, id, sleutel));
+        return bewerkGegeven(c, req.gebruiker, p, sleutel, { actie: String(req.body?.actie ?? ''), ...req.body }, await extractieVoor(c, id, sleutel), await conflictVoor(c, id, sleutel));
       });
       if ('fout' in r) {
         const [code, fout] = ({
           project: [404, 'Woningproject niet gevonden'], onbekend: [404, 'Dit gegeven is nog niet vastgelegd'], label: [400, 'Geef een omschrijving van het gegeven'],
           waarde: [400, ('melding' in r && r.melding) || 'Ongeldige waarde'], geen_extractie: [409, 'De brochure bevat dit gegeven niet'],
           bevestiging: [409, 'Dit gegeven is goedgekeurd of handmatig ingevoerd. Bevestig dat de brochurewaarde het mag vervangen.'],
+          besluit: [409, 'Dit gegeven is tegenstrijdig in de brochure. Leg het besluit vast: bevestig de keuze en geef een korte motivering.'],
           actie: [400, 'Onbekende handeling'], geweigerd: [403, 'Geen rechten voor deze handeling'],
         } as Record<string, [number, string]>)[r.fout as string];
         return reply.code(code).send({ fout });
       }
       return r.gegeven;
     });
+
+  app.post<{ Params: { id: string } }>('/api/projecten/:id/gegevens/bulkgoedkeuring', { preHandler: alleenPlatform }, async (req, reply) => {
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Woningproject niet gevonden' });
+    const r = await alsGebruiker(req.gebruiker, (c) => bulkGoedkeuren(c, req.gebruiker, req.params.id));
+    return r ?? reply.code(404).send({ fout: 'Woningproject niet gevonden' });
+  });
 
   app.post<{ Params: { id: string } }>('/api/projecten/:id/aanleveringen', { preHandler: alleenPlatform }, async (req, reply) => {
     if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Woningproject niet gevonden' });

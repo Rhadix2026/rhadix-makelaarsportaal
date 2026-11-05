@@ -161,6 +161,40 @@ test('brochure-import Markt 27: zelfde resultaat als de generator, gegevens aang
   assert.equal(g('woningtype').vastgelegd.waarde, 'maisonnette');
   assert.match(g('feit.woonoppervlakte').vastgelegd.bron, /brochure p\. \d/);
   assert.equal(g('feit.kamers').conflict.ernst, 'conflict');
+  assert.deepEqual(g('feit.kamers').signalen, ['tegenstrijdigheid', 'onzeker']);
+  assert.ok(g('feit.tuin').signalen.includes('terminologie'), "balkon/dakterras ↔ zonneterras = terminologische afwijking");
+  assert.ok(g('adres').signalen.includes('afwijking'));
+
+  // Meldingen in drie niveaus.
+  const niveau = (t: RegExp) => o.meldingen.find((m: { titel: string }) => t.test(m.titel))?.niveau;
+  assert.equal(niveau(/^Inhoudelijke tegenstrijdigheid: Kamers/), 'blokkerend');
+  assert.equal(niveau(/^Mogelijke terminologische afwijking: Buitenruimte/), 'aandacht');
+  assert.equal(niveau(/^Afwijking van de brochure: Straat/), 'aandacht');
+  assert.equal(niveau(/^Publicatierechten/), 'blokkerend');
+  assert.equal(niveau(/^Vraagprijs gevonden/), 'info');
+  assert.equal(niveau(/onder de publicatienorm/), 'aandacht');
+  assert.ok(o.meldingen.every((m: { niveau: string }) => ['blokkerend', 'aandacht', 'info'].includes(m.niveau)));
+
+  // Fotokwaliteit volgens de norm van de generator (EIS: 1200 px).
+  assert.equal(o.fotokwaliteit.norm.goed, 1200);
+  assert.equal(o.fotokwaliteit.in_gebruik, 34);
+  assert.equal(o.fotokwaliteit.geschikt + o.fotokwaliteit.onvoldoende, 34);
+  assert.equal(o.fotokwaliteit.originelen_nodig, o.fotokwaliteit.onvoldoende, 'zonder losse foto\'s zijn alle te kleine beelden brochurebeelden');
+  assert.ok(o.fotokwaliteit.onvoldoende >= 33);
+
+  // Bulkgoedkeuring: alleen gegevens zonder signaal; tegenstrijdig, terminologie, onzeker en afwijking blijven open.
+  const bulk = await req('beheer', 'POST', `/api/projecten/${p.id}/gegevens/bulkgoedkeuring`);
+  assert.equal(bulk.statusCode, 200, bulk.body);
+  const uit = bulk.json().uitgesloten.map((x: { sleutel: string }) => x.sleutel);
+  for (const s of ['feit.kamers', 'feit.tuin', 'woningtype']) assert.ok(uit.includes(s), `${s} uitgesloten van bulk`);
+  assert.ok(bulk.json().goedgekeurd > 10);
+  const na = await aanlevering(p.id);
+  const gn = (s: string) => na.gegevens.find((x: { sleutel: string }) => x.sleutel === s);
+  assert.equal(gn('feit.kamers').vastgelegd.status, 'overgenomen');
+  assert.equal(gn('feit.tuin').vastgelegd.status, 'overgenomen');
+  assert.equal(gn('feit.bouwjaar').vastgelegd.status, 'goedgekeurd');
+  assert.equal(gn('adres').vastgelegd.waarde, 'Markt 27a', 'bulk raakt handmatige waarden niet');
+  assert.equal((await req('a', 'POST', `/api/projecten/${p.id}/gegevens/bulkgoedkeuring`)).statusCode, 403);
   const pr = (await req('beheer', 'GET', `/api/projecten/${p.id}`)).json();
   assert.equal(pr.postcode, '8471 AS', 'het project volgt het aangevulde gegeven');
   assert.equal(pr.adres, 'Markt 27a');
@@ -172,8 +206,19 @@ test('brochure-import Markt 27: zelfde resultaat als de generator, gegevens aang
   const ov = await req('beheer', 'PUT', url('adres'), { actie: 'brochure', bevestigd: true });
   assert.equal(ov.statusCode, 200, ov.body); assert.equal(ov.json().waarde, 'Markt 27'); assert.equal(ov.json().status, 'goedgekeurd');
   // Correctie en goedkeuring; makelaar mag niets wijzigen.
-  const k = await req('beheer', 'PUT', url('feit.kamers'), { actie: 'corrigeren', waarde: '3' });
+  // Tegenstrijdigheid: nooit zonder expliciet, gemotiveerd besluit.
+  assert.equal((await req('beheer', 'PUT', url('feit.kamers'), { actie: 'goedkeuren' })).statusCode, 409);
+  assert.equal((await req('beheer', 'PUT', url('feit.kamers'), { actie: 'corrigeren', waarde: '3' })).statusCode, 409);
+  assert.equal((await req('beheer', 'PUT', url('feit.kamers'), { actie: 'corrigeren', waarde: '3', bevestigd: true })).statusCode, 409, 'motivering verplicht');
+  assert.equal((await req('beheer', 'PUT', url('feit.tuin'), { actie: 'goedkeuren', motivering: 'zelfde' })).statusCode, 409, 'bevestiging verplicht');
+  const k = await req('beheer', 'PUT', url('feit.kamers'), { actie: 'corrigeren', waarde: '3', bevestigd: true, motivering: 'Makelaar bevestigt 3 kamers' });
   assert.equal(k.statusCode, 200, k.body); assert.equal(k.json().herkomst, 'handmatig');
+  assert.equal(k.json().besluit.soort, 'tegenstrijdigheid'); assert.equal(k.json().besluit.motivering, 'Makelaar bevestigt 3 kamers');
+  const t = await req('beheer', 'PUT', url('feit.tuin'), { actie: 'goedkeuren', bevestigd: true, motivering: 'Zonneterras is het balkon op het dak' });
+  assert.equal(t.json().besluit.soort, 'terminologie'); assert.equal(t.json().waarde, 'Zonneterras');
+  const ob = await aanlevering(p.id);
+  assert.ok(!ob.meldingen.some((m: { niveau: string; titel: string }) => m.niveau === 'blokkerend' && /tegenstrijdigheid/.test(m.titel)));
+  assert.ok(ob.meldingen.some((m: { niveau: string; titel: string }) => m.niveau === 'info' && /^Besloten: Kamers = 3/.test(m.titel)));
   assert.equal((await req('beheer', 'PUT', url('feit.inhoud'), { actie: 'corrigeren', waarde: 'veel' })).statusCode, 400);
   assert.equal((await req('beheer', 'PUT', url('postcode'), { actie: 'goedkeuren' })).json().status, 'goedgekeurd');
   assert.equal((await req('a', 'PUT', url('postcode'), { actie: 'corrigeren', waarde: '1234 AB' })).statusCode, 403);
@@ -238,4 +283,18 @@ test('huisstijl: logo vult lege kleuren, overschrijft ingestelde kleuren pas na 
   assert.equal((await upload('a', `/api/kantoren/${A}/logo`, logo, 'logo.png', 'image/png')).statusCode, 403);
   assert.equal((await upload('beheer', `/api/kantoren/${K}/logo`, Buffer.from('<html><script>x</script></html>'), 'x.svg', 'image/svg+xml')).statusCode, 415);
   assert.equal((await req('b', 'GET', `/api/kantoren/${K}/huisstijl`)).statusCode, 404);
+});
+
+test('bestandsnamen: kort en herkenbaar op het scherm, technische namen vervangen', async () => {
+  const { kortNaam } = await import('../web/src/onderdelen/bestandsnaam.ts');
+  assert.equal(kortNaam('Markt 27 Wolvega.pdf', 'Brochure'), 'Markt 27 Wolvega.pdf');
+  assert.equal(kortNaam('TW92ZURvY3VtZW50OjEyODkzMjMxfDkzNTU4Mnw0OTU5Nzc1MXxhZGJhYWViZmM2MjlkMTVh.pdf', 'Brochure'), 'Brochure.pdf');
+  assert.equal(kortNaam('groot-1c8f8c14-990d-46dc-a2c2-84be351292d9.jpg', 'Foto'), 'Foto.jpg');
+  assert.equal(kortNaam('IMG_20261105_154233_HDR_woonkamer_achterzijde_tuin.JPG', 'Foto').length <= 34, true);
+  assert.match(kortNaam('Verkoopbrochure Markt 27 Wolvega definitief versie 3 november.pdf', 'Brochure'), /^Verkoopbrochure.*….*\.pdf$/);
+  // De volledige naam blijft intern bewaard.
+  const p = (await pool.query("SELECT id FROM project LIMIT 1")).rows[0];
+  const naam = 'TW92ZURvY3VtZW50OjEyODkzMjMxfDkzNTU4Mnw0OTU5Nzc1MXxhZGJhYWViZmM2MjlkMTVh.jpg';
+  const r = await upload('beheer', `/api/projecten/${p.id}/bestanden?soort=foto`, await beeld(1300, 900, { r: 9, g: 99, b: 199 }), naam, 'image/jpeg');
+  assert.equal(r.json().bestand.originele_naam, naam);
 });

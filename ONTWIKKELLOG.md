@@ -67,3 +67,12 @@ Uitgevoerd in een tijdelijke demo-omgeving (`studio_demo`, 5481/8481), met de or
 | Handmatige beslissingen | 2 tegenstrijdigheden (kamers 3 ↔ 4, buitenruimte balkon ↔ zonneterras): beide besloten zoals in concept-5. 20 overige gegevens met één knop goedgekeurd. Profiel 'stads' (voorstel) gekozen. Brochurelogo als kantoorlogo (merk #04158A, detail #F02B89). Lege kantoorgegevens aangevuld (telefoon, e-mail, website, adres). Aanlevering opgeslagen als versie 1. In totaal 7 handelingen |
 | Nog open voor stap 5 | Rechten bevestigen en domein (blokkades van `controleerAanlevering`); 33 brochurebeelden < 1200 px (originele foto's opvragen); geen slottekst |
 | Dubbelherkenning | Getoetst met 2 vergrote kopieën van brochurefoto's als "losse foto's": beide brochurefoto's werden als dubbel gemarkeerd, de losse foto ging voor |
+
+## Stap 4: afrondende verbeteringen na review (05-11-2026)
+
+| Meting | Waarde |
+|---|---|
+| Doorlooptijd | ±25 min |
+| Verbeteringen | (1) Korte bestandsnamen, de volledige naam intern; getoetst met een base64-naam uit een mailbijlage, een uuid-naam en een lange cameranaam op 390, 768, 1024 en 1440 px: niets loopt over. (2) Bulkgoedkeuring server-side, alleen voor gegevens zonder signaal. (3) Meldingen in blokkerend, aandachtspunt en informatief. (4) Tegenstrijdigheid (kamers) en terminologische afwijking (buitenruimte) alleen op te lossen met bevestiging en motivering; migratie `005_besluiten.sql`. (5) Fotokwaliteit: geschikt, onvoldoende resolutie, originelen nodig, openingsbeeld. (6) Secundaire teksten donkerder (#4b5563, 7,6:1) met meer regelafstand; foto-chips van 12 naar 13 px; Rhadix-tokens ongewijzigd |
+| Markt 27 na de verbeteringen | 4 blokkerend (kamers, profiel, rechten, domein), 6 aandachtspunten, 6 informatief. Bulkgoedkeuring: 15 van de 22 gegevens; 7 blijven open (kamers, buitenruimte, woningtype en 4 maten uit de lopende tekst met zekerheid 'middel'). Fotokwaliteit: 1 van 34 geschikt, 33 onder 1200 px, 33 originelen nodig, geen openingsbeeld mogelijk |
+| Tests | 64 (+1 bestandsnamen; de importtest is uitgebreid met besluiten, niveaus, bulk en fotokwaliteit), alle groen. 81 generatortests groen; productie-instantie en generator ongewijzigd |

@@ -66,11 +66,17 @@ export type Verwerking = { id: string; soort: string; volgnummer: number; status
   gestart_op: string | null; klaar_op: string | null; duur_ms: number | null; stappen: Record<string, unknown> | null; fout: string | null; generator_commit: string | null };
 export type Kandidaat = { sleutel: string; label: string; waarde: unknown; eenheid?: string | null; bron: string; zekerheid?: string; verificatie?: string; toelichting?: string };
 export type Gegeven = { sleutel: string; label: string; waarde: unknown; eenheid: string | null; herkomst: 'brochure' | 'handmatig'; status: 'overgenomen' | 'goedgekeurd';
-  bron: string | null; gewijzigd_op: string };
+  bron: string | null; gewijzigd_op: string; besluit: { soort: string; motivering: string; keuze: unknown } | null };
+export type Niveau = 'blokkerend' | 'aandacht' | 'info';
 export type Aanlevering = {
   project: Project; kantoor: { id: string; merknaam: string; juridische_naam: string | null; telefoon: string | null; email: string | null; website: string | null; adresregels: string[]; logo_id: string | null };
   bestanden: Bestand[]; verwerkingen: Verwerking[]; brochure_logo: Bestand | null;
-  gegevens: { sleutel: string; label: string; extractie: Kandidaat | null; vastgelegd: Gegeven | null; afwijking: boolean; conflict: { ernst: string; bronnen: string[] } | null }[];
+  gegevens: { sleutel: string; label: string; extractie: Kandidaat | null; vastgelegd: Gegeven | null; afwijking: boolean; conflict: { ernst: string; bronnen: string[] } | null;
+    signalen: ('tegenstrijdigheid' | 'terminologie' | 'afwijking' | 'onzeker')[]; bulk: boolean }[];
+  meldingen: { niveau: Niveau; titel: string; tekst?: string; sleutel?: string }[];
+  makelaar: { veld: string; brochure: string | null; kantoor: string | null; status: 'geen' | 'kantoor_leeg' | 'gelijk' | 'verschil' }[];
+  fotokwaliteit: { norm: { goed: number; minimaal: number; openingsbeeld: number; aanbevolen: number }; in_gebruik: number; geschikt: number; onvoldoende: number;
+    beperkt: number; te_klein: number; originelen_nodig: number; losse_onder_norm: number; openingsbeeld: boolean; losse: number; uit_brochure: number; dubbel: number; ter_controle: number };
   teksten: { id: string; titel?: string; alineas: { prose?: string; lijst?: string[]; accent?: string }[] }[];
   aanleveringen: { versie: number; opgeslagen_op: string; door: string; samenvatting: Record<string, number | boolean> }[];
   import: null | {

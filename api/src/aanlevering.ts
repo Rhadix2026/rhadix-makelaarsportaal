@@ -7,9 +7,10 @@ import { join } from 'node:path';
 import type pg from 'pg';
 import { config, ROOT } from './config.ts';
 import { alsGebruiker, audit, pool } from './db.ts';
-import { generatorCommit, hamming, leesTeksten } from './generator.ts';
+import { aanleverEisen, generatorCommit, hamming, leesTeksten } from './generator.ts';
+import { fotokwaliteit, meldingen, signalen, SIGNAAL_TEKST, vergelijkMakelaar } from './beoordeling.ts';
 import { beeldInfo, bewaar, herkenType, MAX_GROOTTE, opslagPad, sha256 } from './opslag.ts';
-import { kandidaten, vulAan, type Kandidaat } from './gegevens.ts';
+import { kandidaten, vulAan, type Conflict, type Kandidaat } from './gegevens.ts';
 import { leesProject } from './projecten.ts';
 
 const BESTAND_VELDEN = `id, project_id, kantoor_id, soort, herkomst, verwerking_id, originele_naam, mime, grootte, sha256, breedte, hoogte,
@@ -208,6 +209,12 @@ export async function extractieVoor(c: pg.PoolClient, projectId: string, sleutel
   return imp ? kandidaten(imp.rapport).find((k) => k.sleutel === sleutel) ?? null : null;
 }
 
+export async function conflictVoor(c: pg.PoolClient, projectId: string, sleutel: string): Promise<Conflict | null> {
+  const imp = await laatsteImport(c, projectId);
+  const x = (imp?.rapport.conflicten ?? []).find((k: { gegeven: string }) => `feit.${k.gegeven}` === sleutel);
+  return x ? { ernst: x.ernst, bronnen: x.bronnen } : null;
+}
+
 export async function overzicht(c: pg.PoolClient, projectId: string) {
   const project = await leesProject(c, projectId);
   if (!project) return null;
@@ -220,15 +227,19 @@ export async function overzicht(c: pg.PoolClient, projectId: string) {
   const conflicten = new Map<string, { ernst: string; bronnen: string[] }>(
     (imp?.rapport.conflicten ?? []).map((x: { gegeven: string; ernst: string; bronnen: string[] }) => [`feit.${x.gegeven}`, { ernst: x.ernst, bronnen: x.bronnen }]));
   const sleutels = [...new Set([...['adres', 'postcode', 'plaats', 'woningtype'], ...kand.map((k) => k.sleutel), ...vast.keys()])];
+  const importKlaar = imp ? new Date(imp.klaar_op) : null;
   const gegevens = sleutels.map((s) => {
     const e = kand.find((k) => k.sleutel === s) ?? null;
     const g = vast.get(s) ?? null;
-    return {
+    const regel = {
       sleutel: s, label: g?.label ?? e?.label ?? s,
       extractie: e, vastgelegd: g,
       afwijking: !!(e && g && JSON.stringify(e.waarde) !== JSON.stringify(g.waarde)),
       conflict: conflicten.get(s) ?? null,
     };
+    const sig = signalen(regel, importKlaar);
+    // Bulkgoedkeuring alleen voor overgenomen gegevens zonder enig signaal.
+    return { ...regel, signalen: sig, bulk: g?.status === 'overgenomen' && !sig.length && !regel.conflict };
   });
   let teksten: unknown[] = [];
   const brochureLogo = bestanden.find((b) => b.soort === 'logo' && b.herkomst === 'brochure' && !b.vervallen) ?? null;
@@ -244,8 +255,11 @@ export async function overzicht(c: pg.PoolClient, projectId: string) {
   // Handmatige correcties: alles wat wij zelf hebben vastgelegd of bevestigd na de laatste import.
   const ingrepen = (await c.query(`SELECT actie, count(*)::int AS n FROM auditregel WHERE tabel = 'gegeven' AND rij_id LIKE $1 AND actie LIKE 'gegeven\\_%' GROUP BY actie`,
     [`${projectId}/%`])).rows;
+  const foto = fotokwaliteit(bestanden, await aanleverEisen());
+  const makelaar = vergelijkMakelaar(imp?.rapport.gegevens.makelaar?.waarde, kantoor);
   return {
-    project, kantoor, bestanden, verwerkingen, gegevens, teksten, aanleveringen, brochure_logo: brochureLogo,
+    project, kantoor, bestanden, verwerkingen, gegevens, teksten, aanleveringen, brochure_logo: brochureLogo, fotokwaliteit: foto, makelaar,
+    meldingen: meldingen({ gegevens, project, imp, foto, makelaar }),
     import: imp && {
       id: imp.id, volgnummer: imp.volgnummer, klaar_op: imp.klaar_op, duur_ms: imp.duur_ms, stappen: imp.stappen, generator_commit: imp.generator_commit,
       paginas: imp.rapport.paginas, telling: imp.rapport.telling, hoofdstukken: imp.rapport.hoofdstukken, ontbreekt: imp.rapport.ontbreekt,
@@ -255,6 +269,23 @@ export async function overzicht(c: pg.PoolClient, projectId: string) {
     },
     ingrepen,
   };
+}
+
+/**
+ * Bulkgoedkeuring: keurt in één handeling alle overgenomen gegevens goed die geen enkel signaal
+ * hebben (geen tegenstrijdigheid, terminologische afwijking, afwijking of lagere zekerheid).
+ * De selectie gebeurt hier, niet in de browser. Geeft ook de uitgesloten gegevens met reden.
+ */
+export async function bulkGoedkeuren(c: pg.PoolClient, gebruiker: string, projectId: string) {
+  const o = await overzicht(c, projectId);
+  if (!o) return null;
+  const wel = o.gegevens.filter((g) => g.bulk);
+  const niet = o.gegevens.filter((g) => g.vastgelegd?.status === 'overgenomen' && !g.bulk)
+    .map((g) => ({ sleutel: g.sleutel, label: g.label, reden: g.signalen.map((x) => SIGNAAL_TEKST[x]).join(', ') || 'tegenstrijdigheid besloten, controle nodig' }));
+  if (wel.length) await c.query(`UPDATE gegeven SET status = 'goedgekeurd', gewijzigd_door = $3, gewijzigd_op = now()
+    WHERE project_id = $1 AND sleutel = ANY($2) AND status = 'overgenomen'`, [projectId, wel.map((g) => g.sleutel), gebruiker]);
+  await audit(c, { gebruiker, actie: 'gegeven_bulkgoedkeuring', tabel: 'gegeven', id: `${projectId}/*`, nieuw: { goedgekeurd: wel.map((g) => g.sleutel), uitgesloten: niet } });
+  return { goedgekeurd: wel.length, uitgesloten: niet };
 }
 
 // ── Aanlevering opslaan (momentopname; genereert geen website) ──────────────

@@ -54,6 +54,10 @@ export function kandidaten(r: Rapport): Kandidaat[] {
   return uit;
 }
 
+export type Conflict = { ernst: string; bronnen: string[] };
+/** 'conflict' van de generator = inhoudelijke tegenstrijdigheid; 'onduidelijk' = mogelijke terminologische afwijking. */
+export const soortConflict = (c: Conflict) => (c.ernst === 'conflict' ? 'tegenstrijdigheid' : 'terminologie');
+
 const gelijk = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 async function spiegelProject(c: pg.PoolClient, project: string, sleutel: string, waarde: unknown) {
@@ -118,8 +122,14 @@ export function valideerWaarde(sleutel: string, waarde: unknown, eenheid?: strin
  *                     alleen met bevestigd = true
  */
 export async function bewerkGegeven(c: pg.PoolClient, gebruiker: string, project: { id: string; kantoor_id: string },
-  sleutel: string, h: { actie: string; waarde?: unknown; label?: string; eenheid?: string | null; bevestigd?: boolean }, extractie: Kandidaat | null) {
+  sleutel: string, h: { actie: string; waarde?: unknown; label?: string; eenheid?: string | null; bevestigd?: boolean; motivering?: string },
+  extractie: Kandidaat | null, conflict: Conflict | null = null) {
   const oud = (await c.query('SELECT * FROM gegeven WHERE project_id = $1 AND sleutel = $2', [project.id, sleutel])).rows[0] ?? null;
+  // Een tegenstrijdigheid (of terminologische afwijking) in de brochure wordt nooit stilzwijgend opgelost:
+  // de eerste vaststelling vraagt een bevestiging en een motivering, die bij het gegeven worden bewaard.
+  const besluitNodig = !!conflict && !oud?.besluit && ['goedkeuren', 'corrigeren', 'brochure'].includes(h.actie);
+  const motivering = typeof h.motivering === 'string' ? h.motivering.trim() : '';
+  if (besluitNodig && (h.bevestigd !== true || motivering.length < 3)) return { fout: 'besluit' as const };
   let nieuw;
   if (h.actie === 'goedkeuren') {
     if (!oud) return { fout: 'onbekend' as const };
@@ -146,6 +156,10 @@ export async function bewerkGegeven(c: pg.PoolClient, gebruiker: string, project
       [project.id, project.kantoor_id, sleutel, extractie.label, JSON.stringify(extractie.waarde), extractie.eenheid ?? null, extractie.bron, gebruiker])).rows[0];
   } else return { fout: 'actie' as const };
   if (!nieuw) return { fout: 'geweigerd' as const };
+  if (besluitNodig) {
+    const besluit = { soort: soortConflict(conflict!), keuze: nieuw.waarde, motivering, bronnen: conflict!.bronnen, door: gebruiker, op: new Date().toISOString() };
+    nieuw = (await c.query('UPDATE gegeven SET besluit = $3 WHERE project_id = $1 AND sleutel = $2 RETURNING *', [project.id, sleutel, JSON.stringify(besluit)])).rows[0];
+  }
   await spiegelProject(c, project.id, sleutel, nieuw.waarde);
   await audit(c, { gebruiker, actie: `gegeven_${h.actie}`, tabel: 'gegeven', id: `${project.id}/${sleutel}`, oud, nieuw });
   return { gegeven: nieuw };

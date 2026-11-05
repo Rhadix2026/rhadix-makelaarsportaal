@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'rea
 import { api, ApiFout, upload, type Huisstijl, type Ik, type Kantoor } from './api.ts';
 import { Badge, Kaart, PaginaTitel } from './onderdelen/basis.tsx';
 import { ProfielKeuze } from './onderdelen/ProfielKeuze.tsx';
+import { kortNaam } from './onderdelen/bestandsnaam.ts';
 
 const ROL: Record<string, string> = { makelaar: 'Makelaar', kantoorbeheerder: 'Kantoorbeheerder' };
 
@@ -114,7 +115,7 @@ function HuisstijlKaart({ id, beheer }: { id: string; beheer: boolean }) {
       <div className="raster raster-2">
         <div>
           {h.logo ? <div className="logo-voorbeeld"><img src={`/api/bestanden/${h.logo.id}`} alt="Logo van het kantoor" />
-            <span className="stat-sub">{h.logo.herkomst === 'brochure' ? 'Overgenomen uit een brochure' : h.logo.naam}</span></div>
+            <span className="stat-sub" title={h.logo.naam}>{h.logo.herkomst === 'brochure' ? 'Overgenomen uit een brochure' : kortNaam(h.logo.naam, 'Logo')}</span></div>
             : <p className="stat-sub" style={{ marginTop: 0 }}>Nog geen logo.</p>}
           {beheer && <>
             <button type="button" className="knop knop-lijn" disabled={bezig} onClick={() => ref.current?.click()}>{h.logo ? 'Ander logo uploaden' : 'Logo uploaden'}</button>

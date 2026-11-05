@@ -95,6 +95,22 @@ npm run gebruiker -- deactiveer --email <adres>     # sessies worden direct beë
      goedgekeurd; `goedgekeurd` betekent door ons bevestigd of handmatig ingevoerd. Een
      goedgekeurde waarde wordt nooit automatisch vervangen. Een afwijkende brochurewaarde komt
      als melding op het scherm en kan alleen met bevestiging worden overgenomen.
+- **Tegenstrijdigheden:** `conflict` van de generator geldt als inhoudelijke tegenstrijdigheid,
+  `onduidelijk` als mogelijke terminologische afwijking. Een van beide wordt pas opgelost met een
+  expliciet besluit: bevestiging plus motivering, bewaard in `gegeven.besluit`. De server dwingt dit af.
+- **Meldingen** (`api/src/beoordeling.ts`) staan in drie niveaus:
+  - blokkerend: moet opgelost zijn vóór het genereren;
+  - aandachtspunt: vraagt een menselijke beoordeling;
+  - informatief: geen handeling nodig.
+- **Bulkgoedkeuring** (`POST …/gegevens/bulkgoedkeuring`): de server kiest alleen overgenomen
+  gegevens zonder enig signaal. Tegenstrijdigheden, terminologische afwijkingen, afwijkingen van de
+  brochure en lagere zekerheid blijven over voor een afzonderlijke beoordeling.
+- **Fotokwaliteit:** per foto en in totaal, volgens de norm van de generator voor originelen (EIS:
+  1200 px; 1600 px liggend voor het openingsbeeld). Een brochurebeeld onder de norm telt als
+  "origineel nog aan te leveren".
+- **Bestandsnamen:** op het scherm een korte naam (`web/src/onderdelen/bestandsnaam.ts`).
+  Technische namen worden vervangen door een omschrijving; de volledige naam blijft bewaard en
+  staat in de tooltip.
 - **Dubbele foto's:** dHash met dezelfde drempel als de generator (≤ 6). Het beeld met de
   meeste pixels blijft; bij gelijke kwaliteit gaat de losse foto voor. Zonder losse foto's worden
   de brochurefoto's gebruikt.
