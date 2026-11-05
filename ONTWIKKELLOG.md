@@ -142,3 +142,15 @@ Uitgevoerd in een tijdelijke demo-omgeving (`studio_demo`, 5481/8481), met de or
 | Migratie | `008_overname_tijd.sql` (tabel `activiteit`, kolom `concept.uitgangspunten`); back-up vooraf. Concept v1, gegevens, besluiten, audit, project en alle 713 opgeslagen bestanden gecontroleerd ongewijzigd |
 | Controle | Schermen in een geïsoleerde kopie (eigen poorten, testbeheerder alleen daar) op 1440 en 390 px: geen consolefouten, geen horizontaal scrollen |
 | Tests | 71 groen (+4: actieve tijd, interacties, betrouwbaarheid, indeling; de concepttest loopt nu via de snelle beoordeling met een echte build). 81 generatortests groen; productie-instantie ongewijzigd |
+
+## Realisatie online, fase 1 en voorbereiding fase 2 (6-11-2026)
+
+| Onderdeel | Uitkomst |
+|---|---|
+| Repositorycontrole | Alle commits (nu 14) doorzocht: geen klantbestanden, echte wachtwoorden, tokens of sleutels; alleen fictieve e-mailadressen en 127.0.0.1; auteur alleen het Apple-relayadres. "Contact Linde" in een test is een plaatshouder. Geschikt om openbaar te maken met volledige geschiedenis |
+| Online-instellingen | `STUDIO_HOST`, `STUDIO_HERKOMST`, `STUDIO_COOKIE_SECURE`, `STUDIO_OMGEVING`, `STUDIO_ROL` (alles/api/verwerker); lokaal ongewijzigd. Verwerker als eigen proces (`api/src/verwerker.ts`) op de bestaande wachtrij. `/api/gezond` zonder sessie |
+| Images (arm64) | `deploy/Dockerfile.app` (studio + generator op `4eb7f2c` als git-checkout, Chromium 156, SigLIP-omgeving; model gekoppeld) 3,8 GB; `deploy/Dockerfile.web` (nginx) 77 MB. Alle basisimages (node, postgres, nginx) multi-arch met arm64 |
+| Proef in arm64-containers (Docker Desktop, 8 kernen) | Markt 27 van upload tot concept via de API: import 110,6 s (classificatie 106 s, CPU-gebonden op 6 kernen), snelle beoordeling, concept 28,1 s; 0 blokkerend, axe 0, LCP 88 ms. Pieken: verwerker 3,0 GB, API 103 MB, db 35 MB, web 9 MB |
+| Back-up en herstel | pg_dump en tellingen; restic-rondgang op Linux-opslag (876 bestanden, checksums gelijk, `restic check` in orde); dump teruggezet in een tijdelijke db: tellingen gelijk. Restic via Docker Desktop-bestandsdeling op de Mac gaf I/O-fouten (bekend effect; op de server niet van toepassing) |
+| Server | `deploy/server/`: inrichten, nginx, Cloudflare-IP's, back-up, hersteltest, meting, systemd-timers, LEESMIJ; `deploy/uitrollen.sh`. Nog niets uitgevoerd op een server |
+| Tests | 72 groen |
