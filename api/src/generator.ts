@@ -120,3 +120,20 @@ export async function aanleverEisen(): Promise<{ minBreedte: number; goedeBreedt
   const { EIS } = await importeer('packages/aanlevering/index.mjs');
   return EIS;
 }
+
+/** Een module uit de productie-instantie (alleen lezen en aanroepen; nooit kopiëren). */
+export const generatorModule = (rel: string) => importeer(rel);
+
+/** Generatorversie zoals mp aanleveren haar in het manifest zet. */
+export function generatorVersie(): string {
+  return readFileSync(join(G, 'tools', 'mp.mjs'), 'utf8').match(/const GENERATOR_VERSIE = '([^']+)'/)?.[1] ?? 'onbekend';
+}
+
+/** Schemacontrole van een manifest met het schema en de validator van de generator. */
+export function valideerManifest(manifest: unknown): string[] {
+  const Ajv2020 = generatorRequire('ajv/dist/2020.js').default;
+  const addFormats = generatorRequire('ajv-formats').default;
+  const ajv = new Ajv2020({ allErrors: true, allowUnionTypes: true }); addFormats(ajv);
+  const v = ajv.compile(JSON.parse(readFileSync(join(G, 'schema', 'manifest.schema.json'), 'utf8')));
+  return v(manifest) ? [] : (v.errors as { instancePath: string; message: string }[]).map((e) => `${e.instancePath || '(manifest)'}: ${e.message}`);
+}

@@ -192,6 +192,7 @@ export function ProjectDetail({ id, ik }: { id: string; ik: Ik }) {
         </div>
         <div className="knoppen">
           <a className="knop knop-primair" href={`#/projecten/${p.id}/aanlevering`} style={{ textDecoration: 'none' }}>Aanlevering</a>
+          <a className="knop knop-primair" href={`#/projecten/${p.id}/beoordeling`} style={{ textDecoration: 'none' }}>Beoordeling en vrijgave</a>
           {ik.platformbeheer && <a className="knop knop-lijn" href={`#/projecten/${p.id}/bewerken`} style={{ textDecoration: 'none' }}>Bewerken</a>}
         </div>
       </div>

@@ -76,3 +76,24 @@ Uitgevoerd in een tijdelijke demo-omgeving (`studio_demo`, 5481/8481), met de or
 | Verbeteringen | (1) Korte bestandsnamen, de volledige naam intern; getoetst met een base64-naam uit een mailbijlage, een uuid-naam en een lange cameranaam op 390, 768, 1024 en 1440 px: niets loopt over. (2) Bulkgoedkeuring server-side, alleen voor gegevens zonder signaal. (3) Meldingen in blokkerend, aandachtspunt en informatief. (4) Tegenstrijdigheid (kamers) en terminologische afwijking (buitenruimte) alleen op te lossen met bevestiging en motivering; migratie `005_besluiten.sql`. (5) Fotokwaliteit: geschikt, onvoldoende resolutie, originelen nodig, openingsbeeld. (6) Secundaire teksten donkerder (#4b5563, 7,6:1) met meer regelafstand; foto-chips van 12 naar 13 px; Rhadix-tokens ongewijzigd |
 | Markt 27 na de verbeteringen | 4 blokkerend (kamers, profiel, rechten, domein), 6 aandachtspunten, 6 informatief. Bulkgoedkeuring: 15 van de 22 gegevens; 7 blijven open (kamers, buitenruimte, woningtype en 4 maten uit de lopende tekst met zekerheid 'middel'). Fotokwaliteit: 1 van 34 geschikt, 33 onder 1200 px, 33 originelen nodig, geen openingsbeeld mogelijk |
 | Tests | 64 (+1 bestandsnamen; de importtest is uitgebreid met besluiten, niveaus, bulk en fotokwaliteit), alle groen. 81 generatortests groen; productie-instantie en generator ongewijzigd |
+
+## Stap 5: broncontrole, kwaliteitscontrole en vrijgave (05-11-2026)
+
+| Meting | Waarde |
+|---|---|
+| Doorlooptijd | ±60 min (inclusief een onderbreking van de shell-toegang) |
+| Hergebruik generator | `controleerAanlevering()`, `naarManifest()` + `schema/manifest.schema.json` (Ajv van de productie-instantie), `controleerFeiten()`, `controleerTaal()`/`tekstenMetHerkomst()`, `EIS`/`EIS_BROCHURE`, `huisstijlVoorstel()`. Het DS-3-kwaliteitsrapport (`stelRapportSamen`, ontwerp en keuring) vraagt een gebouwde site en hoort bij stap 6 |
+| Nieuw (alleen waar nodig) | Export database → aanleveringsformaat, fasen en checklist, beslissingen op projectniveau, besluitenlog (`besluit`, alleen aanvullen), afwijzen van gegevens, triggers die de vrijgave laten vervallen; migratie `006_beoordeling_vrijgave.sql` |
+| Iteraties | (1) Het opslagpad stond niet in het overzicht: de export haalt het nu intern op. (2) De test vond "€ 158 per maand" (VvE-bijdrage) in de brochuretekst. Die staat ook in het goedgekeurde concept-5; het wordt nu een aandachtspunt "bedrag in de tekst". (3) Technische paden uit de feitencontrole leesbaar gemaakt. (4) Een knop voor de bulkgoedkeuring ook op het beoordelingsscherm |
+| Tests | 66 (+2: de volledige workflow met Markt 27, en het besluitenlog dat niet te wijzigen of te verwijderen is). 81 generatortests groen; generator en productie-instantie ongewijzigd |
+
+### Praktijktest Markt 27 (demo-omgeving, daarna verwijderd)
+
+| Meting | Waarde |
+|---|---|
+| Import (met classificatie) | ±21–30 s, zoals in stap 4 |
+| Kwaliteitscontrole | 0,13–0,18 s (export, aanleveringscontrole, manifestschema, feiten- en taalcontrole) |
+| Eerste controle | 4 blokkades: profiel, kantoor zonder telefoon en e-mail, publicatierechten, websiteadres. Plus 10 aandachtspunten en 5 informatief |
+| Menselijke handelingen tot vrijgave | 16: bulkgoedkeuring (15 gegevens), 2 besluiten over tegenstrijdigheden, 5 gegevens met lagere zekerheid afzonderlijk, de kantoorgegevens aanvullen uit de brochure, rechten, profiel, websiteadres (tijdelijk), openingsbeeld, fotokwaliteit accepteren, de kwaliteitscontrole opnieuw uitvoeren, de vrijgave |
+| Na de beslissingen | 0 blokkades. 4 aandachtspunten: het VvE-bedrag en 3 lange zinnen. 5 informatief. Vrijgave geslaagd; status `klaar_voor_productie`; alle 4 fasen gereed; 28 besluiten in het log |
+| Borging | Een vrijgave met een verouderde kwaliteitscontrole wordt geweigerd (409). Een wijziging na de vrijgave laat de status terugvallen naar `aanlevering_incompleet`. Bij een nieuwe import blijven goedgekeurde, gecorrigeerde en afgewezen gegevens staan |

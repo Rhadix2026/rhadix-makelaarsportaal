@@ -122,6 +122,34 @@ npm run gebruiker -- deactiveer --email <adres>     # sessies worden direct beë
   blijven staan tot het voorstel wordt bevestigd.
 - **Scheiding:** `bestand`, `verwerking`, `gegeven` en `aanlevering` hebben elk een
   `kantoor_id` met RLS. Een trigger dwingt af dat dit gelijk is aan het kantoor van het project.
+
+## Broncontrole, kwaliteitscontrole en vrijgave (stap 5)
+
+- **Vier fasen:** aanlevering → broncontrole → kwaliteitscontrole → vrijgave voor
+  conceptgeneratie (`#/projecten/:id/beoordeling`). Per fase zie je de status en de openstaande
+  punten. Elk open punt zegt welke handeling nodig is (`api/src/controle.ts`, `beoordeling()`).
+- **Broncontrole:** tellingen van overgenomen, gecontroleerd, gecorrigeerd en afgewezen
+  gegevens, opgeloste tegenstrijdigheden en wat ontbreekt. Alleen gegevens die nog beoordeeld
+  moeten worden, staan open; vastgestelde gegevens hoeven niet opnieuw. Een brochuregegeven kan
+  gemotiveerd worden **afgewezen** (status `afgewezen`); het komt dan niet in de export.
+- **Kwaliteitscontrole** (`POST /api/projecten/:id/kwaliteitscontrole`):
+  - de studio zet de vastgelegde gegevens om naar het aanleverformaat van de generator
+    (`woning.json`, `teksten.md`, `fotos.csv`, `fotos/`, `plattegronden/`, logo) in de opslag;
+  - daarop lopen de bestaande controles: `controleerAanlevering()`, `naarManifest()` met het
+    manifestschema van de generator, `controleerFeiten()` en `controleerTaal()`;
+  - bedragen in de teksten worden gemeld als aandachtspunt;
+  - het resultaat wordt bewaard als `verwerking` (soort `kwaliteitscontrole`), met een
+    vingerafdruk van de stand. Na elke wijziging is de controle verouderd.
+- **Beslissingen op projectniveau** (`PUT …/beslissingen/:onderwerp`): publicatierechten (met
+  toelichting), presentatieprofiel, websiteadres (domein of tijdelijk `<slug>.invalid`),
+  openingsbeeld (liggend en groot genoeg) en het accepteren van de fotokwaliteit voor een eerste
+  concept.
+- **Besluitenlog** (tabel `besluit`): wie, wanneer, wat en waarom, voor elke menselijke
+  beslissing. Het log wordt alleen aangevuld; de rol `studio_app` mag niet wijzigen of verwijderen.
+- **Vrijgave:** alleen als alle verplichte controles zijn afgerond. De status wordt
+  `klaar_voor_productie`: gereed voor een eerste concept, **geen publicatie**. Er wordt niets
+  gegenereerd. Elke latere wijziging van gegevens, bestanden of projectbeslissingen laat de
+  vrijgave vervallen; dat regelt een databasetrigger.
   Het kantoor van een project ligt vast zodra er iets is aangeleverd.
 
 ## Tests

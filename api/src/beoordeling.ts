@@ -90,7 +90,8 @@ export function meldingen(o: {
     if (g.signalen.includes('afwijking')) add('aandacht', `Afwijking van de brochure: ${g.label}`, `Vastgelegd '${g.vastgelegd?.waarde}', brochure '${g.extractie?.waarde}' (${g.extractie?.bron}).`, g.sleutel);
     if (g.vastgelegd?.besluit) add('info', `Besloten: ${g.label} = ${g.vastgelegd.waarde}${g.vastgelegd.eenheid ? ` ${g.vastgelegd.eenheid}` : ''}`, `Motivering: ${g.vastgelegd.besluit.motivering}`, g.sleutel);
   }
-  for (const g of o.gegevens.filter((x) => !x.vastgelegd && ['adres', 'plaats'].includes(x.sleutel))) add('blokkerend', `Ontbreekt: ${g.label}`, 'Verplicht voor de woningwebsite; vul het handmatig aan.', g.sleutel);
+  const leeg = (x: GegevenRegel) => !x.vastgelegd || x.vastgelegd.status === 'afgewezen';
+  for (const g of o.gegevens.filter((x) => leeg(x) && ['adres', 'plaats'].includes(x.sleutel))) add('blokkerend', `Ontbreekt: ${g.label}`, 'Verplicht voor de woningwebsite; vul het handmatig aan.', g.sleutel);
   for (const g of o.gegevens.filter((x) => !x.vastgelegd && !['adres', 'plaats'].includes(x.sleutel))) add('aandacht', `Ontbreekt: ${g.label}`, 'Niet in de brochure gevonden.', g.sleutel);
   if (!o.project.profiel) add('blokkerend', 'Presentatieprofiel nog niet gekozen', o.imp.rapport.gegevens?.profiel ? `Voorstel uit de brochure: '${o.imp.rapport.gegevens.profiel.waarde}'.` : undefined);
   for (const f of o.imp.controle?.fouten ?? []) {

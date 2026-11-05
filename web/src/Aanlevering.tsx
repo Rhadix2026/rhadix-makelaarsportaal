@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react'
 import { api, ApiFout, upload, type Aanlevering as Data, type Bestand, type Ik, type Niveau } from './api.ts';
 import { Badge, Kaart, type Toon } from './onderdelen/basis.tsx';
 import { kortNaam } from './onderdelen/bestandsnaam.ts';
+import { Fasebalk, useBeoordeling } from './Beoordeling.tsx';
 
 const CATEGORIE: Record<string, string> = { exterieur: 'Buitenzijde', entree: 'Entree', woonkamer: 'Woonkamer', keuken: 'Keuken', slaapkamer: 'Slaapkamer',
   werkkamer: 'Werkkamer', badkamer: 'Sanitair', buitenruimte: 'Buitenruimte', omgeving: 'Omgeving', overig: 'Overig' };
@@ -61,16 +62,18 @@ const SIGNAAL: Record<string, { tekst: string; toon: Toon }> = {
   afwijking: { tekst: 'wijkt af', toon: 'let-op' }, onzeker: { tekst: 'lagere zekerheid', toon: 'let-op' },
 };
 
-function GegevenRij({ g, beheer, bewerk }: { g: Data['gegevens'][number]; beheer: boolean;
+export function GegevenRij({ g, beheer, bewerk }: { g: Data['gegevens'][number]; beheer: boolean;
   bewerk: (sleutel: string, data: object) => Promise<string | null> }) {
-  const [modus, setModus] = useState<'' | 'corrigeren' | 'bevestigen' | 'besluiten'>('');
+  const [modus, setModus] = useState<'' | 'corrigeren' | 'bevestigen' | 'besluiten' | 'afwijzen'>('');
+  const [reden, setReden] = useState('');
   const [waarde, setWaarde] = useState('');
   const [fout, setFout] = useState<string | null>(null);
   const v = g.vastgelegd, e = g.extractie;
   const openBesluit = g.signalen.includes('tegenstrijdigheid') || g.signalen.includes('terminologie');
   const doe = async (data: object) => { const f = await bewerk(g.sleutel, data); setFout(f); if (!f) setModus(''); };
   const status = !v ? <Badge toon="let-op">ontbreekt</Badge>
-    : v.status === 'goedgekeurd' ? <Badge toon="goed">{v.besluit ? 'besloten' : v.herkomst === 'handmatig' ? 'handmatig' : 'goedgekeurd'}</Badge>
+    : v.status === 'afgewezen' ? <Badge toon="fout">afgewezen</Badge>
+    : v.status === 'goedgekeurd' ? <Badge toon="goed">{v.besluit ? 'besloten' : v.herkomst === 'handmatig' ? 'gecorrigeerd' : 'goedgekeurd'}</Badge>
     : <Badge toon="info">overgenomen</Badge>;
   return (
     <tr className={g.signalen.length ? 'rij-let-op' : undefined}>
@@ -98,6 +101,12 @@ function GegevenRij({ g, beheer, bewerk }: { g: Data['gegevens'][number]; beheer
               <button className="knop knop-primair knop-klein" type="submit">Opslaan</button>
               <button className="knop knop-lijn knop-klein" type="button" onClick={() => setModus('')}>Annuleren</button>
             </form>
+          ) : modus === 'afwijzen' ? (
+            <form className="inline-form" onSubmit={(x) => { x.preventDefault(); void doe({ actie: 'afwijzen', motivering: reden }); }}>
+              <input aria-label={`Reden voor het afwijzen van ${g.label}`} placeholder="Reden (verplicht)" value={reden} onChange={(x) => setReden(x.target.value)} autoFocus />
+              <button className="knop knop-primair knop-klein" type="submit" disabled={reden.trim().length < 3}>Afwijzen</button>
+              <button className="knop knop-lijn knop-klein" type="button" onClick={() => setModus('')}>Annuleren</button>
+            </form>
           ) : modus === 'bevestigen' ? (
             <div className="inline-form">
               <span className="bron" style={{ marginTop: 0 }}>Vervangen door {toon(e?.waarde, e?.eenheid)}?</span>
@@ -113,6 +122,7 @@ function GegevenRij({ g, beheer, bewerk }: { g: Data['gegevens'][number]; beheer
                 onClick={() => (v?.status === 'goedgekeurd' ? setModus('bevestigen') : void doe({ actie: 'brochure' }))}>Brochurewaarde overnemen</button>}
               <button className="knop knop-lijn knop-klein" type="button" onClick={() => { setWaarde(v ? String(v.waarde) : e ? String(e.waarde) : ''); setModus('corrigeren'); }}>
                 {v ? 'Corrigeren' : 'Aanvullen'}</button>
+              {v?.herkomst === 'brochure' && v.status !== 'afgewezen' && <button className="knop knop-lijn knop-klein" type="button" onClick={() => setModus('afwijzen')}>Afwijzen</button>}
             </div>
           )}
           {modus === 'corrigeren' && g.sleutel === 'woningtype' && <WoningtypeKeuze doe={(w) => void doe({ actie: 'corrigeren', waarde: w })} />}
@@ -191,7 +201,9 @@ export function AanleverScherm({ id, ik }: { id: string; ik: Ik }) {
   const [bezig, setBezig] = useState(false);
   const beheer = ik.platformbeheer;
 
-  const laad = useCallback(() => api<Data>(`/api/projecten/${id}/aanlevering`).then(setD, (e) => setFout(e.message)), [id]);
+  const fase = useBeoordeling(id);
+  const laadFase = fase.laad;
+  const laad = useCallback(() => { void laadFase(); return api<Data>(`/api/projecten/${id}/aanlevering`).then(setD, (e) => setFout(e.message)); }, [id, laadFase]);
   useEffect(() => { void laad(); }, [laad]);
   const lopend = d?.verwerkingen.find((v) => v.status === 'wachtrij' || v.status === 'bezig');
   useEffect(() => { if (!lopend) return; const t = setInterval(() => void laad(), 1500); return () => clearInterval(t); }, [lopend, laad]);
@@ -275,6 +287,7 @@ export function AanleverScherm({ id, ik }: { id: string; ik: Ik }) {
           </div>
         )}
       </div>
+      {fase.d && <Fasebalk fasen={fase.d.fasen} projectId={id} actief={1} />}
       {melding && <p className={`melding melding-${melding.toon}`} role="status" style={{ marginBottom: 16 }}>{melding.tekst}</p>}
 
       <div className="raster raster-4" style={{ marginBottom: 16 }}>

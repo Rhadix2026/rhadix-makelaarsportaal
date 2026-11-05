@@ -65,7 +65,7 @@ export type Bestand = {
 export type Verwerking = { id: string; soort: string; volgnummer: number; status: 'wachtrij' | 'bezig' | 'klaar' | 'mislukt'; aangevraagd_op: string;
   gestart_op: string | null; klaar_op: string | null; duur_ms: number | null; stappen: Record<string, unknown> | null; fout: string | null; generator_commit: string | null };
 export type Kandidaat = { sleutel: string; label: string; waarde: unknown; eenheid?: string | null; bron: string; zekerheid?: string; verificatie?: string; toelichting?: string };
-export type Gegeven = { sleutel: string; label: string; waarde: unknown; eenheid: string | null; herkomst: 'brochure' | 'handmatig'; status: 'overgenomen' | 'goedgekeurd';
+export type Gegeven = { sleutel: string; label: string; waarde: unknown; eenheid: string | null; herkomst: 'brochure' | 'handmatig'; status: 'overgenomen' | 'goedgekeurd' | 'afgewezen';
   bron: string | null; gewijzigd_op: string; besluit: { soort: string; motivering: string; keuze: unknown } | null };
 export type Niveau = 'blokkerend' | 'aandacht' | 'info';
 export type Aanlevering = {
@@ -92,4 +92,23 @@ export type Huisstijl = {
   merkkleur: string | null; detailkleur: string | null; herkomst: 'handmatig' | 'logo' | null; logo: { id: string; mime: string; naam: string; herkomst: string } | null;
   voorstel: { merk: string | null; detail: string | null; bron: string; kleuren: { kleur: string; aandeel: number }[] } | null; voorstel_wijkt_af: boolean;
   toepassing: { profiel: string; licht: { achtergrond: string; accent: string; contrast: number; aangepast: boolean }; donker: { achtergrond: string; accent: string; contrast: number; aangepast: boolean } }[];
+};
+
+export type GegevenRegel = Aanlevering['gegevens'][number];
+export type Beoordeling = {
+  project: Project; vingerafdruk: string; klaar: boolean;
+  fasen: { nr: number; naam: string; status: 'gereed' | 'open' | 'wacht'; open: number }[];
+  checklist: { fase: number; code: string; titel: string; ok: boolean; actie: string | null }[];
+  broncontrole: { telling: Record<'totaal' | 'overgenomen' | 'gecontroleerd' | 'gecorrigeerd' | 'afgewezen' | 'tegenstrijdig' | 'opgelost' | 'ontbrekend', number>;
+    te_beoordelen: GegevenRegel[]; vastgesteld: GegevenRegel[] };
+  kwaliteit: null | { id: string; volgnummer: number; klaar_op: string; duur_ms: number; generator_commit: string; actueel: boolean;
+    resultaat: Record<'blokkerend' | 'aandacht' | 'info', { bron: string; tekst: string }[]>; taal: { criterium: string; waarde: unknown; norm: string; ok: boolean }[] };
+  meldingen: Aanlevering['meldingen']; fotokwaliteit: Aanlevering['fotokwaliteit'];
+  beslissingen: {
+    rechten: { bevestigd: boolean; toelichting: string; op: string } | null; profiel: string | null; profiel_voorstel: { waarde: string; toelichting: string } | null;
+    domein: string | null; conceptadres: boolean; openingsbeeld: Bestand | null; openingsbeeld_norm: number; openingsbeeld_kandidaten: Bestand[]; openingsbeeld_voorstel: string | null;
+    fotokwaliteit: { nodig: boolean; akkoord: boolean; besluit: { motivering: string; door: string; op: string } | null };
+  };
+  vrijgave: { vrijgegeven: boolean; actueel: boolean; op?: string; motivering?: string | null; vervallen_op?: string; vervallen_door?: string; betekenis?: string };
+  besluiten: { id: number; onderwerp: string; handeling: string; waarde: unknown; motivering: string | null; op: string; door: string | null }[];
 };

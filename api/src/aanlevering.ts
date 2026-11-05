@@ -12,6 +12,7 @@ import { fotokwaliteit, meldingen, signalen, SIGNAAL_TEKST, vergelijkMakelaar } 
 import { beeldInfo, bewaar, herkenType, MAX_GROOTTE, opslagPad, sha256 } from './opslag.ts';
 import { kandidaten, vulAan, type Conflict, type Kandidaat } from './gegevens.ts';
 import { leesProject } from './projecten.ts';
+import { legVast } from './besluiten.ts';
 
 const BESTAND_VELDEN = `id, project_id, kantoor_id, soort, herkomst, verwerking_id, originele_naam, mime, grootte, sha256, breedte, hoogte,
   pagina, hoofdstuk, dubbel_van, dubbel_reden, classificatie, vervallen, geupload_op`;
@@ -284,6 +285,8 @@ export async function bulkGoedkeuren(c: pg.PoolClient, gebruiker: string, projec
     .map((g) => ({ sleutel: g.sleutel, label: g.label, reden: g.signalen.map((x) => SIGNAAL_TEKST[x]).join(', ') || 'tegenstrijdigheid besloten, controle nodig' }));
   if (wel.length) await c.query(`UPDATE gegeven SET status = 'goedgekeurd', gewijzigd_door = $3, gewijzigd_op = now()
     WHERE project_id = $1 AND sleutel = ANY($2) AND status = 'overgenomen'`, [projectId, wel.map((g) => g.sleutel), gebruiker]);
+  if (wel.length) await legVast(c, { project: projectId, door: gebruiker, onderwerp: `gegevens (bulk): ${wel.length}`, handeling: 'goedgekeurd',
+    waarde: { sleutels: wel.map((g) => g.sleutel) }, motivering: 'gegevens zonder melding, gelijk aan de brochure' });
   await audit(c, { gebruiker, actie: 'gegeven_bulkgoedkeuring', tabel: 'gegeven', id: `${projectId}/*`, nieuw: { goedgekeurd: wel.map((g) => g.sleutel), uitgesloten: niet } });
   return { goedgekeurd: wel.length, uitgesloten: niet };
 }

@@ -9,6 +9,7 @@
 //     kolommen volgen het vastgelegde gegeven.
 import type pg from 'pg';
 import { audit } from './db.ts';
+import { legVast } from './besluiten.ts';
 import { normaliseerPostcode, WONINGTYPEN } from './projecten.ts';
 
 export const BASIS = { adres: 'Straat en huisnummer', postcode: 'Postcode', plaats: 'Plaats', woningtype: 'Woningtype' } as const;
@@ -80,7 +81,8 @@ export async function vulAan(c: pg.PoolClient, gebruiker: string, project: { id:
   for (const k of lijst) {
     const oud = bestaand.get(k.sleutel);
     if (oud && gelijk(oud.waarde, k.waarde) && (oud.eenheid ?? null) === (k.eenheid ?? null)) { t.gelijk++; continue; }
-    if (oud?.status === 'goedgekeurd') { t.beschermd++; continue; }
+    // Goedgekeurd, handmatig of afgewezen: nooit automatisch vervangen (afwijkingen worden gemeld).
+    if (oud && oud.status !== 'overgenomen') { t.beschermd++; continue; }
     if (oud) {
       await c.query(`UPDATE gegeven SET label = $3, waarde = $4, eenheid = $5, bron = $6, verwerking_id = $7, gewijzigd_door = $8, gewijzigd_op = now()
         WHERE project_id = $1 AND sleutel = $2`, [project.id, k.sleutel, k.label, JSON.stringify(k.waarde), k.eenheid ?? null, k.bron, verwerking, gebruiker]);
@@ -127,7 +129,7 @@ export async function bewerkGegeven(c: pg.PoolClient, gebruiker: string, project
   const oud = (await c.query('SELECT * FROM gegeven WHERE project_id = $1 AND sleutel = $2', [project.id, sleutel])).rows[0] ?? null;
   // Een tegenstrijdigheid (of terminologische afwijking) in de brochure wordt nooit stilzwijgend opgelost:
   // de eerste vaststelling vraagt een bevestiging en een motivering, die bij het gegeven worden bewaard.
-  const besluitNodig = !!conflict && !oud?.besluit && ['goedkeuren', 'corrigeren', 'brochure'].includes(h.actie);
+  const besluitNodig = !!conflict && !oud?.besluit && ['goedkeuren', 'corrigeren', 'brochure', 'afwijzen'].includes(h.actie);
   const motivering = typeof h.motivering === 'string' ? h.motivering.trim() : '';
   if (besluitNodig && (h.bevestigd !== true || motivering.length < 3)) return { fout: 'besluit' as const };
   let nieuw;
@@ -154,13 +156,21 @@ export async function bewerkGegeven(c: pg.PoolClient, gebruiker: string, project
       ON CONFLICT (project_id, sleutel) DO UPDATE SET waarde = EXCLUDED.waarde, eenheid = EXCLUDED.eenheid, herkomst = 'brochure', status = 'goedgekeurd',
         bron = EXCLUDED.bron, gewijzigd_door = EXCLUDED.gewijzigd_door, gewijzigd_op = now() RETURNING *`,
       [project.id, project.kantoor_id, sleutel, extractie.label, JSON.stringify(extractie.waarde), extractie.eenheid ?? null, extractie.bron, gebruiker])).rows[0];
+  } else if (h.actie === 'afwijzen') {
+    // Gemotiveerd afwijzen: het brochuregegeven wordt niet gebruikt. Alleen voor brochuregegevens.
+    if (!oud || oud.herkomst !== 'brochure') return { fout: 'onbekend' as const };
+    if (motivering.length < 3) return { fout: 'motivering' as const };
+    nieuw = (await c.query(`UPDATE gegeven SET status = 'afgewezen', gewijzigd_door = $3, gewijzigd_op = now() WHERE project_id = $1 AND sleutel = $2 RETURNING *`,
+      [project.id, sleutel, gebruiker])).rows[0];
   } else return { fout: 'actie' as const };
   if (!nieuw) return { fout: 'geweigerd' as const };
   if (besluitNodig) {
     const besluit = { soort: soortConflict(conflict!), keuze: nieuw.waarde, motivering, bronnen: conflict!.bronnen, door: gebruiker, op: new Date().toISOString() };
     nieuw = (await c.query('UPDATE gegeven SET besluit = $3 WHERE project_id = $1 AND sleutel = $2 RETURNING *', [project.id, sleutel, JSON.stringify(besluit)])).rows[0];
   }
-  await spiegelProject(c, project.id, sleutel, nieuw.waarde);
+  await spiegelProject(c, project.id, sleutel, nieuw.status === 'afgewezen' ? null : nieuw.waarde);
+  await legVast(c, { project: project.id, door: gebruiker, onderwerp: `gegeven: ${nieuw.label}`, handeling: { goedkeuren: 'goedgekeurd', corrigeren: 'gecorrigeerd', brochure: 'brochurewaarde overgenomen', afwijzen: 'afgewezen' }[h.actie] ?? h.actie,
+    waarde: { sleutel, waarde: nieuw.waarde, eenheid: nieuw.eenheid, ...(oud && JSON.stringify(oud.waarde) !== JSON.stringify(nieuw.waarde) ? { was: oud.waarde } : {}) }, motivering: motivering || null });
   await audit(c, { gebruiker, actie: `gegeven_${h.actie}`, tabel: 'gegeven', id: `${project.id}/${sleutel}`, oud, nieuw });
   return { gegeven: nieuw };
 }

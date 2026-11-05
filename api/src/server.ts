@@ -15,6 +15,7 @@ import { bewerkGegeven } from './gegevens.ts';
 import { bevestigVoorstel, leesHuisstijl, logoUitBrochure, uploadLogo } from './huisstijl.ts';
 import { miniatuur, opslagPad } from './opslag.ts';
 import { createReadStream } from 'node:fs';
+import { beoordeling, beslis, kwaliteitscontrole } from './controle.ts';
 import { leesProject, lijstProjecten, maakProject, STATUSSEN, telling, valideerProject, wijzigProject, WONINGTYPEN } from './projecten.ts';
 
 const STUDIO_VERSIE = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version as string;
@@ -225,6 +226,7 @@ export function bouwApp() {
           waarde: [400, ('melding' in r && r.melding) || 'Ongeldige waarde'], geen_extractie: [409, 'De brochure bevat dit gegeven niet'],
           bevestiging: [409, 'Dit gegeven is goedgekeurd of handmatig ingevoerd. Bevestig dat de brochurewaarde het mag vervangen.'],
           besluit: [409, 'Dit gegeven is tegenstrijdig in de brochure. Leg het besluit vast: bevestig de keuze en geef een korte motivering.'],
+          motivering: [400, 'Geef een motivering voor het afwijzen'],
           actie: [400, 'Onbekende handeling'], geweigerd: [403, 'Geen rechten voor deze handeling'],
         } as Record<string, [number, string]>)[r.fout as string];
         return reply.code(code).send({ fout });
@@ -243,6 +245,35 @@ export function bouwApp() {
     const r = await alsGebruiker(req.gebruiker, (c) => slaOp(c, req.gebruiker, req.params.id));
     if ('fout' in r) return reply.code(r.fout === 'onbekend' ? 404 : 409).send({ fout: r.fout === 'onbekend' ? 'Woningproject niet gevonden' : 'Wacht tot de verwerking klaar is' });
     return reply.code(201).send(r.aanlevering);
+  });
+
+  // ── Broncontrole, kwaliteitscontrole en vrijgave (stap 5) ──────────────
+  app.get<{ Params: { id: string } }>('/api/projecten/:id/beoordeling', async (req, reply) => {
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Woningproject niet gevonden' });
+    const b = await alsGebruiker(req.gebruiker, (c) => beoordeling(c, req.params.id));
+    return b ?? reply.code(404).send({ fout: 'Woningproject niet gevonden' });
+  });
+
+  app.post<{ Params: { id: string } }>('/api/projecten/:id/kwaliteitscontrole', { preHandler: alleenPlatform }, async (req, reply) => {
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Woningproject niet gevonden' });
+    const r = await alsGebruiker(req.gebruiker, (c) => kwaliteitscontrole(c, req.gebruiker, req.params.id));
+    if ('fout' in r) return reply.code(r.fout === 'onbekend' ? 404 : 409).send({ fout: r.fout === 'onbekend' ? 'Woningproject niet gevonden' : 'Importeer eerst de brochure' });
+    return reply.code(201).send(r.controle);
+  });
+
+  app.put<{ Params: { id: string; onderwerp: string }; Body: Record<string, unknown> }>('/api/projecten/:id/beslissingen/:onderwerp', { preHandler: alleenPlatform }, async (req, reply) => {
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Woningproject niet gevonden' });
+    const r = await alsGebruiker(req.gebruiker, (c) => beslis(c, req.gebruiker, req.params.id, req.params.onderwerp, req.body ?? {}));
+    if ('fout' in r) {
+      const x = r as { fout: string; melding?: string; open?: { titel: string; actie: string }[] };
+      const [code, fout] = ({
+        onbekend: [404, 'Woningproject niet gevonden'], motivering: [400, 'Geef een korte motivering of toelichting'],
+        waarde: [400, x.melding ?? 'Ongeldige waarde'], onderwerp: [400, 'Onbekende beslissing'],
+        niet_klaar: [409, `Nog niet alle verplichte controles zijn afgerond: ${(x.open ?? []).map((o) => o.titel).join('; ')}`],
+      } as Record<string, [number, string]>)[x.fout];
+      return reply.code(code).send({ fout, ...(x.open ? { open: x.open } : {}) });
+    }
+    return r.beoordeling;
   });
 
   // ── Kantoorhuisstijl ────────────────────────────────────────────────────
