@@ -112,7 +112,7 @@ function Metingen({ k }: { k: Concept }) {
   );
 }
 
-export function ConceptScherm({ id, ik }: { id: string; ik: Ik }) {
+export function ConceptScherm({ id, ik, versie }: { id: string; ik: Ik; versie?: number }) {
   const [d, setD] = useState<ConceptenOverzicht | null>(null);
   const [k, setK] = useState<Concept | null>(null);
   const [kies, setKies] = useState<string | null>(null);
@@ -130,7 +130,9 @@ export function ConceptScherm({ id, ik }: { id: string; ik: Ik }) {
     catch (e) { setFout((e as Error).message); return null; }
   }, [id]);
   useEffect(() => { void laad(); }, [laad]);
-  const gekozen = kies ?? d?.concepten[0]?.id ?? null;
+  // Een versie uit de adresregel (#/projecten/:id/concept/v2) gaat voor; anders de nieuwste.
+  const gevraagd = versie ? d?.concepten.find((c) => c.versie === versie) : undefined;
+  const gekozen = kies ?? gevraagd?.id ?? d?.concepten[0]?.id ?? null;
   useEffect(() => { if (gekozen) api<Concept>(`/api/concepten/${gekozen}`).then(setK, (e) => setFout(e.message)); else setK(null); }, [gekozen, d?.concepten.length]);
   const loopt = d?.generatie && ['wachtrij', 'bezig'].includes(d.generatie.status);
   const [nu, setNu] = useState(Date.now());
@@ -179,6 +181,7 @@ export function ConceptScherm({ id, ik }: { id: string; ik: Ik }) {
       {melding && <p className={`melding melding-${melding.toon}`} role="status" style={{ marginBottom: 16 }}>{melding.tekst}</p>}
       {loopt && g && <p className="melding melding-let-op" role="status" style={{ marginBottom: 16 }}>
         <strong>{g.status === 'wachtrij' ? 'In de wachtrij' : 'Bezig'}</strong>: exporteren, manifest maken, bouwen (automatische compositie) en de kwaliteitscontrole van Design System 1.0. {g.gestart_op ? `${duur(nu - new Date(g.gestart_op).getTime())} verstreken.` : ''} Dit duurt ongeveer een halve tot twee minuten.</p>}
+      {versie && !gevraagd && <p className="melding melding-let-op" role="status" style={{ marginBottom: 16 }}>Conceptversie v{versie} bestaat niet bij deze woning.{d.concepten.length ? ' De nieuwste versie wordt getoond.' : ''}</p>}
       {g?.status === 'mislukt' && <p className="melding melding-fout" role="alert" style={{ marginBottom: 16 }}>De laatste generatie is mislukt: {g.fout}</p>}
 
       {!d.concepten.length ? (

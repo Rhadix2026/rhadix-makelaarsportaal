@@ -31,7 +31,7 @@ function Scherm({ hash, ik }: { hash: string; ik: Ik }) {
   if (hash === '#/projecten/nieuw') return ik.platformbeheer ? <ProjectFormulier /> : <p className="melding melding-fout">Alleen voor platformbeheer.</p>;
   if ((m = hash.match(/^#\/projecten\/([0-9a-f-]{36})\/bewerken$/))) return <ProjectFormulier id={m[1]} />;
   if ((m = hash.match(/^#\/projecten\/([0-9a-f-]{36})\/aanlevering$/))) return <AanleverScherm id={m[1]} ik={ik} />;
-  if ((m = hash.match(/^#\/projecten\/([0-9a-f-]{36})\/concept$/))) return <ConceptScherm id={m[1]} ik={ik} />;
+  if ((m = hash.match(/^#\/projecten\/([0-9a-f-]{36})\/concept(?:\/v(\d+))?$/))) return <ConceptScherm key={hash} id={m[1]} ik={ik} versie={m[2] ? Number(m[2]) : undefined} />;
   if ((m = hash.match(/^#\/projecten\/([0-9a-f-]{36})\/beoordeling$/))) return <BeoordelingScherm id={m[1]} ik={ik} />;
   if ((m = hash.match(/^#\/projecten\/([0-9a-f-]{36})$/))) return <ProjectDetail id={m[1]} ik={ik} />;
   return <Dashboard ik={ik} />;

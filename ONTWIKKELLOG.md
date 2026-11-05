@@ -118,3 +118,14 @@ Uitgevoerd in een tijdelijke demo-omgeving (`studio_demo`, 5481/8481), met de or
 | Tot het eerste concept (machine) | **47,9 s** (ambitie ≤ 15 min: gehaald) |
 | Kwaliteitsrapport v1 | 0 blokkerend; axe 0 bevindingen op 390 en 1280 px; LCP mobiel 108 ms; CLS 0; geen externe verzoeken; 14 waarschuwingen (o.a. 3 onzekere fotocategorieën, 4 onbevestigde feiten, ontbrekende openingstekst, introductie en slottekst, tekstbreedte, 3 lange zinnen) |
 | Pagina | Automatische compositie in 14 delen, met ruimtesecties (Entree, Wonen, Koken, Slapen en werken, Sanitair, Buiten, Omgeving), plattegronden, kenmerken en contact; profiel stads, DS 1.0 |
+
+## Herstel na stap 6: navigatie naar project en concepten (5-11-2026)
+
+| Onderdeel | Uitkomst |
+|---|---|
+| Oorzaak "concept v1 niet te zien" | De praktijktest van stap 6 liep in een tijdelijke demo-omgeving (eigen database en opslag) die daarna is verwijderd. In de studio-database heeft Markt 27 geen concept, geen kwaliteitscontrole, geen vrijgave en geen besluiten. Concept v1 is niet te herstellen. Het rapport van stap 6 had dit expliciet moeten melden |
+| Status | "Aanlevering incompleet" klopt met de werkelijke voortgang (alleen de import is gedaan; 22 gegevens overgenomen, niets beoordeeld) |
+| Oorzaak "project niet te openen" | Alleen de vetgedrukte naam in de dashboardrij was een link, zonder zichtbaar linkkenmerk; de rest van de rij reageerde niet |
+| Correcties | Hele dashboardrij klikbaar (de naam blijft het toetsenbordpad), "Openen →" en een kolom Concepten; kaart "Conceptversies" op de projectpagina met per versie "Preview bekijken" of de reden waarom er nog geen concept is; directe link per versie (`#/projecten/:id/concept/v<n>`) met een melding als de versie niet bestaat; API-veld `concepten` (aantal versies) bij projecten; fasebalk op mobiel in één kolom (liep bij 390 px buiten beeld) |
+| Controle | Route dashboard → project → concepten op 1440 en 390 px doorlopen in een geïsoleerde kopie van de database (eigen poorten, testbeheerder alleen in de kopie): rijklik opent het project, geen concept en uitgeschakelde genereerknop correct gemeld, geen consolefouten, geen horizontaal scrollen. Woninggegevens en opslag ongewijzigd |
+| Tests | 67 groen (concepttest uitgebreid met het aantal versies in lijst en detail); 81 generatortests groen; productie-instantie ongewijzigd |

@@ -114,6 +114,9 @@ test('Markt 27: vrijgave met alleen de verplichte punten, concept v1, preview, v
   assert.equal(sha(site1), hash1, 'v1 is niet overschreven');
   const v2 = lijst.concepten[0];
   assert.notEqual(v2.voorbeeld_token, v1.voorbeeld_token);
+  // Dashboard en projectdetail tonen het aantal versies (route dashboard → project → concepten).
+  assert.equal((await req('beheer', 'GET', `/api/projecten/${P}`)).json().concepten, 2);
+  assert.equal((await req('beheer', 'GET', '/api/projecten')).json().projecten.find((x: { id: string }) => x.id === P).concepten, 2);
   assert.equal((await req('beheer', 'PUT', `/api/concepten/${v2.id}/beoordeling`, { besluit: 'geaccepteerd', motivering: 'Eerste concept akkoord' })).json().status, 'geaccepteerd');
   // De inhoud van een versie ligt vast in de database (alleen de beoordeling mag worden bijgewerkt).
   const { alsGebruiker } = await import('../api/src/db.ts');

@@ -31,6 +31,8 @@ export type Project = {
   adres: string | null; postcode: string | null; plaats: string | null; woningtype: string | null; profiel: string | null;
   ontwerpsysteem: string; domein: string | null; contactpersoon: string | null; status: string;
   aangemaakt_op: string; gewijzigd_op: string; aanlevering_gestart: boolean;
+  /** Aantal conceptversies. */
+  concepten: number;
 };
 
 export type ProjectCatalogus = {

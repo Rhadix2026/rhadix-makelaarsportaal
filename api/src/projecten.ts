@@ -70,7 +70,8 @@ export function valideerProject(b: Record<string, unknown>, profielen: string[])
 
 const VELDEN = `p.id, p.kantoor_id, k.merknaam AS kantoor, k.slug AS kantoor_slug, p.slug, p.naam, p.adres, p.postcode, p.plaats,
   p.woningtype, p.profiel, p.ontwerpsysteem, p.domein, p.contactpersoon, p.status, p.aangemaakt_op, p.gewijzigd_op,
-  EXISTS (SELECT 1 FROM bestand b WHERE b.project_id = p.id) AS aanlevering_gestart`;
+  EXISTS (SELECT 1 FROM bestand b WHERE b.project_id = p.id) AS aanlevering_gestart,
+  (SELECT count(*)::int FROM concept c WHERE c.project_id = p.id) AS concepten`;
 
 export async function lijstProjecten(c: pg.PoolClient, filter: { kantoor?: string; status?: string; zoek?: string }) {
   const w: string[] = [], v: unknown[] = [];

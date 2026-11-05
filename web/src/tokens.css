@@ -201,6 +201,10 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 .lijst tr:last-child td { border-bottom: 0; }
 .lijst a { color: var(--navy); font-weight: 700; text-decoration: none; }
 .lijst a:hover { text-decoration: underline; }
+.lijst tr.klikbaar { cursor: pointer; }
+.lijst tr.klikbaar:hover td { background: #f5f7fb; }
+.lijst tr.klikbaar:hover a, .lijst tr.klikbaar a:focus-visible { text-decoration: underline; }
+.lijst .rij-actie { color: var(--navy); font-weight: 600; white-space: nowrap; text-align: right; }
 .lijst-kaart { padding: 0; overflow-x: auto; }
 .leeg { padding: 32px 24px; text-align: center; color: var(--tekst3); font-size: 15px; }
 .terug { font-size: 14px; color: var(--tekst3); text-decoration: none; display: inline-block; margin-bottom: 12px; }
@@ -332,7 +336,7 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 .fase-gereed .fase-nr { background: var(--groen); border-color: var(--groen); color: #fff; }
 .fase-open .fase-nr { border-color: var(--amber); color: #92400e; }
 .fase-tekst { display: grid; gap: 4px; min-width: 0; justify-items: start; }
-.fase-naam { font-weight: 700; font-size: 14px; color: var(--tekst); line-height: 1.3; }
+.fase-naam { font-weight: 700; font-size: 14px; color: var(--tekst); line-height: 1.3; overflow-wrap: anywhere; }
 .vrijgave { border-width: 2px; }
 .vrijgave-gereed { border-color: var(--groen); }
 .vrijgave-klaar { border-color: var(--amber); }
@@ -355,8 +359,8 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 .foto-gekozen { border-color: var(--navy); box-shadow: 0 0 0 2px var(--navy); }
 .melding-bron { display: inline-block; font-size: 13px; font-weight: 700; color: #4b5563; margin-right: 4px; }
 .melding-bron::after { content: ':'; }
-@media (max-width: 960px) { .fasebalk { grid-template-columns: 1fr 1fr; } .beslissingen { grid-template-columns: 1fr 1fr; } }
-@media (max-width: 600px) { .beslissingen { grid-template-columns: 1fr; } .fasebalk { grid-template-columns: 1fr 1fr; gap: 8px; } .fase a { padding: 10px; } }
+@media (max-width: 960px) { .fasebalk { grid-template-columns: repeat(2, minmax(0, 1fr)); } .beslissingen { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 600px) { .beslissingen { grid-template-columns: 1fr; } .fasebalk { grid-template-columns: minmax(0, 1fr); gap: 8px; } .fase a { padding: 10px; } }
 
 /* ── Stap 6: concept en preview ──────────────────────────────────────────── */
 .versies { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -367,3 +371,5 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 .voorbeeld-kader { margin-top: 14px; padding: 12px; background: var(--achtergrond); border: 1px solid var(--rand); border-radius: var(--radius-lg); overflow: hidden; }
 .voorbeeld-kader iframe { display: block; box-shadow: 0 4px 18px rgba(0,0,0,.12); }
 .checklist li.aanbevolen .vink { background: var(--amber-licht); color: #92400e; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.fase-tekst .badge { white-space: normal; max-width: 100%; }

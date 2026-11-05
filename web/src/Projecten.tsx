@@ -1,6 +1,6 @@
 // Dashboard en woningprojecten: overzicht met filters, detail met status en voortgang, formulier.
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
-import { api, ApiFout, type Ik, type Kantoor, type Project, type ProjectCatalogus } from './api.ts';
+import { api, ApiFout, type ConceptenOverzicht, type Ik, type Kantoor, type Project, type ProjectCatalogus } from './api.ts';
 import { Badge, Kaart, PaginaTitel, StatKaart, type Toon } from './onderdelen/basis.tsx';
 import { ProfielKeuze } from './onderdelen/ProfielKeuze.tsx';
 
@@ -141,15 +141,18 @@ export function Dashboard({ ik }: { ik: Ik }) {
             </p>
           ) : (
             <table className="lijst">
-              <thead><tr><th>Woning</th><th>Kantoor</th><th>Status</th><th>Profiel</th><th>Gewijzigd</th></tr></thead>
+              <thead><tr><th>Woning</th><th>Kantoor</th><th>Status</th><th>Profiel</th><th>Concepten</th><th>Gewijzigd</th><th><span className="sr-only">Actie</span></th></tr></thead>
               <tbody>
                 {data.projecten.map((p) => (
-                  <tr key={p.id}>
+                  // De hele rij opent het project; de link in de eerste kolom blijft het toetsenbordpad.
+                  <tr key={p.id} className="klikbaar" onClick={(e) => { if (!(e.target as HTMLElement).closest('a')) location.hash = `#/projecten/${p.id}`; }}>
                     <td><a href={`#/projecten/${p.id}`}>{p.naam}</a><div className="stat-sub">{[p.adres, p.plaats].filter(Boolean).join(', ') || p.slug}</div></td>
                     <td>{p.kantoor}</td>
                     <td><StatusBadge status={p.status} catalogus={catalogus} /></td>
                     <td>{p.profiel ?? '—'}</td>
+                    <td>{p.concepten ? <a href={`#/projecten/${p.id}/concept`}>{p.concepten === 1 ? '1 versie' : `${p.concepten} versies`}</a> : 'nog geen'}</td>
                     <td>{new Date(p.gewijzigd_op).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                    <td className="rij-actie" aria-hidden="true">Openen →</td>
                   </tr>
                 ))}
               </tbody>
@@ -203,7 +206,41 @@ export function ProjectDetail({ id, ik }: { id: string; ik: Ik }) {
         </Kaart>
         <Kaart titel="Voortgang"><Voortgang status={p.status} /></Kaart>
       </div>
+      <ConceptVersies id={p.id} />
     </>
+  );
+}
+
+/** De conceptversies van het project, met een directe link naar de preview van elke versie. */
+function ConceptVersies({ id }: { id: string }) {
+  const [d, setD] = useState<ConceptenOverzicht | null>(null);
+  const [fout, setFout] = useState<string | null>(null);
+  useEffect(() => { api<ConceptenOverzicht>(`/api/projecten/${id}/concepten`).then(setD, (e) => setFout(e.message)); }, [id]);
+  return (
+    <div style={{ marginTop: 16 }}>
+      <Kaart titel="Conceptversies">
+        {fout ? <p className="melding melding-fout" role="alert">{fout}</p> : !d ? null : !d.concepten.length ? (
+          <p className="bron" style={{ marginTop: 0 }}>
+            Er is nog geen concept voor deze woning.{' '}
+            {d.mag_genereren.ok ? <>De woning is vrijgegeven: <a href={`#/projecten/${id}/concept`}>genereer het eerste concept</a>.</>
+              : <>{(d.mag_genereren.reden ?? 'De woning is nog niet vrijgegeven').replace(/\.?$/, '.')} Zie <a href={`#/projecten/${id}/beoordeling`}>beoordeling en vrijgave</a>.</>}
+          </p>
+        ) : (
+          <table className="tabel">
+            <thead><tr><th>Versie</th><th>Status</th><th>Gemaakt</th><th>Kwaliteit</th><th><span className="sr-only">Actie</span></th></tr></thead>
+            <tbody>{d.concepten.map((c) => (
+              <tr key={c.id}>
+                <td><strong>v{c.versie}</strong></td>
+                <td>{({ te_beoordelen: 'te beoordelen', geaccepteerd: 'geaccepteerd', verbeterpunten: 'verbeterpunten' } as Record<string, string>)[c.status] ?? c.status}</td>
+                <td>{new Date(c.aangemaakt_op).toLocaleString('nl-NL', { dateStyle: 'medium', timeStyle: 'short' })}</td>
+                <td>{c.kwaliteit_kort.blokkerend} blokkerend · {c.kwaliteit_kort.waarschuwingen} waarschuwingen</td>
+                <td><a href={`#/projecten/${id}/concept/v${c.versie}`}>Preview bekijken →</a></td>
+              </tr>))}
+            </tbody>
+          </table>
+        )}
+      </Kaart>
+    </div>
   );
 }
 
