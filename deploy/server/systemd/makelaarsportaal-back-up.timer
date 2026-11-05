@@ -1,0 +1,10 @@
+[Unit]
+Description=Makelaarsportaal: back-up elke nacht om 02:30
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+RandomizedDelaySec=10m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

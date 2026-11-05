@@ -1,0 +1,7 @@
+[Unit]
+Description=Makelaarsportaal: capaciteitsmeting (CPU, geheugen, schijf, containers, beschikbaarheid)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/meting.sh
+Nice=5

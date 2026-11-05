@@ -1,0 +1,8 @@
+[Unit]
+Description=Makelaarsportaal: wekelijkse hersteltest van de laatste back-up
+After=docker.service network-online.target makelaarsportaal-back-up.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/hersteltest.sh
+Nice=10

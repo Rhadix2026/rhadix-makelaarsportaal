@@ -1,0 +1,10 @@
+[Unit]
+Description=Makelaarsportaal: dagelijkse externe back-up (restic)
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/back-up.sh
+Nice=10
+IOSchedulingClass=idle
