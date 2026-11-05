@@ -30,10 +30,12 @@ RUN npm ci --no-audit --no-fund \
  && npx playwright install --with-deps chromium \
  && chown -R node:node /opt/generator/.cache
 
-# Python-omgeving voor SigLIP, op de plek waar de generator haar verwacht (.cache/ai/venv).
-# torch van de CPU-index (geen CUDA); de rest volgens tools/ai/requirements.txt (alleen wheels).
+# Python-omgeving voor SigLIP, op de plek waar de generator haar verwacht (.cache/ai/venv), volgens
+# tools/ai/requirements.txt (alleen wheels). Op arm64 is torch van PyPI al CPU-only; op amd64 eerst
+# torch van de CPU-index, anders haalt pip de CUDA-versie (enkele GB) binnen.
+ARG TARGETARCH
 RUN python3 -m venv /opt/generator/.cache/ai/venv \
- && /opt/generator/.cache/ai/venv/bin/pip install --only-binary :all: --index-url https://download.pytorch.org/whl/cpu torch==2.8.0 \
+ && if [ "$TARGETARCH" = amd64 ]; then /opt/generator/.cache/ai/venv/bin/pip install --only-binary :all: --index-url https://download.pytorch.org/whl/cpu --no-deps torch==2.8.0; fi \
  && /opt/generator/.cache/ai/venv/bin/pip install --only-binary :all: -r /opt/generator/tools/ai/requirements.txt \
  && mkdir -p /opt/generator/.cache/ai/hf /opt/generator/metingen \
  && chown -R node:node /opt/generator/.cache /opt/generator/metingen
