@@ -25,7 +25,8 @@ RUN apt-get update \
 # ── Generator (vaste commit, als git-checkout; zie bouw-images.sh) ──
 COPY --from=generator --chown=node:node . /opt/generator
 WORKDIR /opt/generator
-RUN npm ci --no-audit --no-fund \
+# Ook de devDependencies: playwright, ajv en axe gebruikt de generator tijdens mp bouw/kwaliteit.
+RUN npm ci --include=dev --no-audit --no-fund \
  # Chromium voor mp bouw/kwaliteit (Playwright-versie van de generator), met systeembibliotheken.
  && npx playwright install --with-deps chromium \
  && chown -R node:node /opt/generator/.cache
