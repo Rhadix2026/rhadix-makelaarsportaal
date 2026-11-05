@@ -190,7 +190,10 @@ export function ProjectDetail({ id, ik }: { id: string; ik: Ik }) {
           <h1>{p.naam}</h1>
           <p><StatusBadge status={p.status} catalogus={catalogus} /> &nbsp;{p.kantoor}</p>
         </div>
-        {ik.platformbeheer && <a className="knop knop-lijn" href={`#/projecten/${p.id}/bewerken`} style={{ textDecoration: 'none' }}>Bewerken</a>}
+        <div className="knoppen">
+          <a className="knop knop-primair" href={`#/projecten/${p.id}/aanlevering`} style={{ textDecoration: 'none' }}>Aanlevering</a>
+          {ik.platformbeheer && <a className="knop knop-lijn" href={`#/projecten/${p.id}/bewerken`} style={{ textDecoration: 'none' }}>Bewerken</a>}
+        </div>
       </div>
       <div className="raster raster-2">
         <Kaart titel="Basisgegevens">
@@ -229,14 +232,17 @@ export function ProjectFormulier({ id }: { id?: string }) {
   useEffect(() => { if (!profielHandmatig && kantoor) setW((x) => ({ ...x, profiel: kantoor.standaard_profiel ?? '' })); }, [kantoor, profielHandmatig]);
 
   const zet = (k: keyof typeof LEEG) => (e: { target: { value: string } }) => setW({ ...w, [k]: e.target.value });
-  const kantoorVast = !!origineel && origineel.status !== 'aanlevering_incompleet';
+  const kantoorVast = !!origineel && (origineel.status !== 'aanlevering_incompleet' || origineel.aanlevering_gestart);
   const kiesbaar = kantoren.filter((k) => k.status === 'actief' || k.id === w.kantoor_id);
 
   async function verstuur(e: FormEvent) {
     e.preventDefault();
     setBezig(true); setFouten({}); setMelding(null);
     try {
-      const p = await api<Project>(id ? `/api/projecten/${id}` : '/api/projecten', { methode: id ? 'PUT' : 'POST', data: w });
+      // Nieuw project zonder eigen profielkeuze: het kantoor bepaalt (de server neemt de standaard over).
+      // Een bewuste keuze, ook 'Nog niet gekozen', gaat altijd mee.
+      const data = id || profielHandmatig ? w : { ...w, profiel: undefined };
+      const p = await api<Project>(id ? `/api/projecten/${id}` : '/api/projecten', { methode: id ? 'PUT' : 'POST', data });
       location.hash = `#/projecten/${p.id}`;
     } catch (x) {
       if (x instanceof ApiFout) { setFouten(x.fouten); setMelding(x.message); } else setMelding('De studio is niet bereikbaar');
@@ -256,7 +262,7 @@ export function ProjectFormulier({ id }: { id?: string }) {
     <>
       <a className="terug" href={id ? `#/projecten/${id}` : '#/projecten'}>← {id ? 'Terug naar het project' : 'Woningprojecten'}</a>
       <PaginaTitel badge="Woningproject" titel={id ? 'Woningproject bewerken' : 'Nieuw woningproject'}
-        sub={id ? undefined : 'Koppel de woning aan een makelaarskantoor en leg de basisgegevens vast. Brochure en foto\'s volgen in de aanlevering.'} />
+        sub={id ? undefined : 'Alleen het kantoor en de naam zijn nodig. De overige gegevens vult de brochure-import aan; wat u hier invult, wordt daarbij nooit zonder bevestiging overschreven.'} />
       <form className="kaart formulier" onSubmit={verstuur} noValidate>
         {melding && <p className="melding melding-fout" role="alert">{melding}</p>}
         <div className="formulier-raster">
@@ -268,6 +274,7 @@ export function ProjectFormulier({ id }: { id?: string }) {
           ), kantoorVast ? 'Vast: de aanlevering is al begonnen.' : undefined)}
           {veld('naam', 'Naam van de woning *', <input id="naam" value={w.naam} onChange={zet('naam')} placeholder="bijvoorbeeld Voorbeeldweg 1" />,
             id ? <>Korte naam: <span className="mono">{origineel?.slug}</span> (vast)</> : 'De korte naam wordt automatisch gemaakt uit kantoor en naam.')}
+          <p className="formulier-tussenkop">Optioneel: wordt bij de brochure-import aangevuld</p>
           {veld('adres', 'Straat en huisnummer', <input id="adres" value={w.adres} onChange={zet('adres')} />)}
           {veld('postcode', 'Postcode', <input id="postcode" value={w.postcode} onChange={zet('postcode')} placeholder="1234 AB" />)}
           {veld('plaats', 'Plaats', <input id="plaats" value={w.plaats} onChange={zet('plaats')} />)}

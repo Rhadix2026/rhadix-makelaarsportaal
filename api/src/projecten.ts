@@ -7,6 +7,7 @@
 import type pg from 'pg';
 import { audit } from './db.ts';
 import { maakSlug } from './kantoren.ts';
+import { vanFormulier } from './gegevens.ts';
 
 export const WONINGTYPEN = ['vrijstaand', 'twee-onder-een-kap', 'geschakeld', 'tussenwoning', 'hoekwoning',
   'appartement', 'maisonnette', 'boerderij', 'landgoed', 'overig'] as const;
@@ -27,6 +28,8 @@ export const gereserveerd = (s: string) => GERESERVEERD.includes(s) || /^(kalibr
 export type ProjectInvoer = {
   kantoor_id: string; naam: string; slug: string | null; adres: string | null; postcode: string | null; plaats: string | null;
   woningtype: string | null; profiel: string | null; domein: string | null; contactpersoon: string | null;
+  /** Geen profiel meegestuurd: het standaardprofiel van het kantoor geldt. Leeg meegestuurd = 'Nog niet gekozen'. */
+  profiel_van_kantoor: boolean;
 };
 
 const leeg = (v: unknown) => (typeof v === 'string' ? v.trim() : '') || null;
@@ -62,11 +65,12 @@ export function valideerProject(b: Record<string, unknown>, profielen: string[])
   }
   if (Object.keys(f).length) return { ok: false, fouten: f };
   return { ok: true, project: { kantoor_id: kantoor_id!, naam: naam!, slug, adres: leeg(b.adres), postcode, plaats: leeg(b.plaats),
-    woningtype, profiel, domein: domeinIn, contactpersoon: leeg(b.contactpersoon) } };
+    woningtype, profiel, domein: domeinIn, contactpersoon: leeg(b.contactpersoon), profiel_van_kantoor: !('profiel' in b) } };
 }
 
 const VELDEN = `p.id, p.kantoor_id, k.merknaam AS kantoor, k.slug AS kantoor_slug, p.slug, p.naam, p.adres, p.postcode, p.plaats,
-  p.woningtype, p.profiel, p.ontwerpsysteem, p.domein, p.contactpersoon, p.status, p.aangemaakt_op, p.gewijzigd_op`;
+  p.woningtype, p.profiel, p.ontwerpsysteem, p.domein, p.contactpersoon, p.status, p.aangemaakt_op, p.gewijzigd_op,
+  EXISTS (SELECT 1 FROM bestand b WHERE b.project_id = p.id) AS aanlevering_gestart`;
 
 export async function lijstProjecten(c: pg.PoolClient, filter: { kantoor?: string; status?: string; zoek?: string }) {
   const w: string[] = [], v: unknown[] = [];
@@ -98,8 +102,9 @@ export async function maakProject(c: pg.PoolClient, gebruiker: string, p: Projec
   if (gereserveerd(slug)) return { fout: 'gereserveerd' as const };
   const r = (await c.query(`INSERT INTO project (kantoor_id, slug, naam, adres, postcode, plaats, woningtype, profiel, ontwerpsysteem, domein, contactpersoon, aangemaakt_door)
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
-    [p.kantoor_id, slug, p.naam, p.adres, p.postcode, p.plaats, p.woningtype, p.profiel ?? k.standaard_profiel, ontwerpsysteem, p.domein, p.contactpersoon, gebruiker])).rows[0];
+    [p.kantoor_id, slug, p.naam, p.adres, p.postcode, p.plaats, p.woningtype, p.profiel_van_kantoor ? k.standaard_profiel : p.profiel, ontwerpsysteem, p.domein, p.contactpersoon, gebruiker])).rows[0];
   const nieuw = await leesProject(c, r.id);
+  await vanFormulier(c, gebruiker, nieuw, null, nieuw);
   await audit(c, { gebruiker, actie: 'aanmaken', tabel: 'project', id: r.id, nieuw });
   return { project: nieuw };
 }
@@ -112,7 +117,8 @@ export async function wijzigProject(c: pg.PoolClient, gebruiker: string, id: str
   const oud = await leesProject(c, id);
   if (!oud) return { fout: 'onbekend' as const };
   if (p.kantoor_id !== oud.kantoor_id) {
-    if (oud.status !== 'aanlevering_incompleet') return { fout: 'kantoor_vast' as const };
+    // Vast zodra er iets is aangeleverd: bestanden en gegevens horen dan bij dit kantoor.
+    if (oud.status !== 'aanlevering_incompleet' || oud.aanlevering_gestart) return { fout: 'kantoor_vast' as const };
     const k = (await c.query('SELECT status FROM kantoor WHERE id = $1', [p.kantoor_id])).rows[0];
     if (!k) return { fout: 'kantoor' as const };
     if (k.status !== 'actief') return { fout: 'inactief' as const };
@@ -122,6 +128,7 @@ export async function wijzigProject(c: pg.PoolClient, gebruiker: string, id: str
     [id, p.kantoor_id, p.naam, p.adres, p.postcode, p.plaats, p.woningtype, p.profiel, p.domein, p.contactpersoon]);
   if (!r.rowCount) return { fout: 'geweigerd' as const };
   const nieuw = await leesProject(c, id);
+  await vanFormulier(c, gebruiker, nieuw, oud, nieuw);
   await audit(c, { gebruiker, actie: 'wijzigen', tabel: 'project', id, oud, nieuw });
   return { project: nieuw };
 }

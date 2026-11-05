@@ -68,9 +68,45 @@ npm run gebruiker -- deactiveer --email <adres>     # sessies worden direct beë
 - **Kantoorinstellingen zijn standaardwaarden:** het standaardprofiel van het kantoor wordt bij
   het aanmaken gekopieerd. Een keuze per woning verandert het kantoor niet, en een latere
   kantoorwijziging verandert bestaande projecten niet.
-- **Kantoor wijzigen** kan alleen zolang de aanlevering nog niet begonnen is.
+- **Verplicht** zijn alleen het kantoor en de naam; de overige gegevens vult de brochure-import aan.
+  Zonder profielkeuze geldt de kantoorstandaard; een bewuste keuze 'Nog niet gekozen' blijft staan.
+- **Kantoor wijzigen** kan alleen zolang er nog niets is aangeleverd.
 - **Statussen** volgen FO 2.0 §4. In deze stap is elke nieuwe woning `aanlevering_incompleet`;
   statusovergangen komen met de aanlevering en de generatie.
+
+## Aanlevering en brochure-import (stap 4)
+
+- **Aanleveren:** een PDF-brochure en losse foto's (JPEG, PNG, WebP, TIFF; meerdere tegelijk)
+  gaan als ruwe inhoud naar `POST /api/projecten/:id/bestanden?soort=brochure|foto`. Het type
+  volgt uit de inhoud. Originelen worden byte-voor-byte bewaard op sha256 in de opslag
+  (`STUDIO_OPSLAG`, standaard `data/opslag/`, niet in git). Dezelfde foto twee keer levert
+  geen tweede bestand op.
+- **Verwerking:** een wachtrij met één verwerker (`verwerking`, `SKIP LOCKED`). Het werk
+  gebeurt in een kindproces (`api/src/verwerker-kind.ts`), zodat de API bereikbaar blijft. Daarin
+  worden de bestaande functies van de productie-instantie rechtstreeks aangeroepen:
+  - `importeer()` schrijft in de studio-opslag, nooit in de generator;
+  - `controleerAanlevering()`;
+  - `SIGLIP.classificeerBeelden()` (lokaal; met `STUDIO_CLASSIFICATIE=uit` overgeslagen).
+- **Drie lagen:**
+  1. **Brongegevens:** de bestanden en de beelden die de import uit de PDF haalt, met pagina.
+  2. **Geëxtraheerd:** het importrapport, per import onveranderlijk bewaard. De vraagprijs wordt
+     niet bewaard.
+  3. **Vastgelegd:** de tabel `gegeven`. `overgenomen` betekent automatisch aangevuld en nog niet
+     goedgekeurd; `goedgekeurd` betekent door ons bevestigd of handmatig ingevoerd. Een
+     goedgekeurde waarde wordt nooit automatisch vervangen. Een afwijkende brochurewaarde komt
+     als melding op het scherm en kan alleen met bevestiging worden overgenomen.
+- **Dubbele foto's:** dHash met dezelfde drempel als de generator (≤ 6). Het beeld met de
+  meeste pixels blijft; bij gelijke kwaliteit gaat de losse foto voor. Zonder losse foto's worden
+  de brochurefoto's gebruikt.
+- **Opslaan:** `POST /api/projecten/:id/aanleveringen` maakt een genummerde momentopname. Er
+  wordt geen website gegenereerd en de status verandert niet.
+- **Kantoorhuisstijl:** het logo uploaden, of het logo uit de brochure overnemen. De kleuren
+  worden afgeleid met `logoKleuren()` en `huisstijlVoorstel()` van de generator, met een
+  contrast van minimaal 4,5:1 per profiel. Lege kleuren worden aangevuld; ingestelde kleuren
+  blijven staan tot het voorstel wordt bevestigd.
+- **Scheiding:** `bestand`, `verwerking`, `gegeven` en `aanlevering` hebben elk een
+  `kantoor_id` met RLS. Een trigger dwingt af dat dit gelijk is aan het kantoor van het project.
+  Het kantoor van een project ligt vast zodra er iets is aangeleverd.
 
 ## Tests
 

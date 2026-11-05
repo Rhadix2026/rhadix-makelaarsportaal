@@ -235,3 +235,54 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 
 .tabel a { color: var(--navy); font-weight: 600; text-decoration: none; }
 .tabel a:hover { text-decoration: underline; }
+
+/* ── Stap 4: aanlevering ─────────────────────────────────────────────────── */
+.pagina > .kaart, .pagina > .raster { margin-bottom: 16px; }
+.sleepvak { border: 2px dashed var(--rand2); border-radius: var(--radius-lg); padding: 22px; text-align: center; background: #fafafa; transition: border-color .15s, background .15s; }
+.sleepvak-boven { border-color: var(--accent); background: var(--blauw-licht); }
+.sleepvak-uit { opacity: .6; }
+.sleepvak-label { font-weight: 700; color: var(--tekst2); font-size: 15px; }
+.uploadlijst { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 6px; }
+.uploadlijst li { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 14px; color: var(--tekst2); }
+.uploadnaam { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.balk-klein { display: inline-block; width: 140px; flex: none; }
+.tabel-schuif { overflow-x: auto; }
+.gegevenstabel { table-layout: auto; min-width: 640px; }
+.gegevenstabel td, .gegevenstabel th { padding-right: 14px; }
+.gegevenstabel td:first-child { width: 22%; min-width: 0; }
+.gegevenstabel td:last-child { overflow-wrap: normal; }
+.gegeven-label { font-weight: 600; color: var(--tekst2); }
+.gegeven-melding { font-size: 13px; color: var(--amber); margin-top: 4px; }
+.rij-let-op td { background: #fffbeb; }
+.bron { font-size: 13px; color: var(--tekst3); margin-top: 2px; }
+.inline-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.inline-form input, .inline-form select { padding: 6px 8px; border: 1px solid var(--rand2); border-radius: 6px; font: inherit; font-size: 14px; min-width: 0; flex: 1 1 120px; }
+.knop-klein { padding: 5px 10px; font-size: 13px; }
+.tekstknop { background: none; border: 0; padding: 0; color: var(--navy); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; margin-top: 8px; }
+.tekstknop:hover { text-decoration: underline; }
+.fotoraster { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+.foto { margin: 0; border: 1px solid var(--rand); border-radius: var(--radius); overflow: hidden; background: #fff; }
+.foto img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: var(--achtergrond); }
+.foto figcaption { padding: 8px; }
+.foto .chip { font-size: 12px; padding: 2px 6px; }
+.foto-dubbel { opacity: .55; }
+.chip-let-op { background: var(--amber-licht); border-color: #fcd34d; color: var(--amber); }
+.meldingen { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.meldingen li { font-size: 14px; color: var(--tekst2); padding: 8px 12px; border-radius: var(--radius); background: var(--achtergrond); border-left: 3px solid var(--rand2); }
+.meldingen li.m-let-op { background: #fffbeb; border-left-color: var(--amber); }
+.meldingen li.m-info { background: var(--blauw-licht); border-left-color: var(--accent); }
+.uitklap { margin-top: 10px; font-size: 14px; color: var(--tekst2); }
+.uitklap summary { cursor: pointer; font-weight: 600; }
+.uitklap p, .uitklap ul { margin: 8px 0; line-height: 1.55; }
+.logo-voorbeeld { display: flex; align-items: center; gap: 12px; margin: 12px 0; }
+.logo-voorbeeld img { max-height: 56px; max-width: 200px; object-fit: contain; background: #fff; border: 1px solid var(--rand); border-radius: 6px; padding: 6px; }
+.tussenkop { font-size: 14px; font-weight: 700; margin: 18px 0 8px; color: var(--tekst2); }
+.formulier-tussenkop { grid-column: 1 / -1; font-size: 13px; font-weight: 700; color: var(--tekst3); text-transform: uppercase; letter-spacing: .04em; border-top: 1px solid var(--rand); padding-top: 14px; }
+.melding-let-op { background: var(--amber-licht); color: #92400e; }
+.huisstijl-proef { display: inline-block; padding: 3px 8px; border-radius: 4px; font-weight: 700; border: 1px solid var(--rand); }
+@media (max-width: 600px) {
+  .gegevenstabel { min-width: 0; }
+  .gegevenstabel tr td { padding: 2px 0 !important; }
+  .gegevenstabel td[data-kop]::before { content: attr(data-kop); display: block; font-size: 12px; color: var(--tekst3); font-weight: 600; margin-top: 6px; }
+  .balk-klein { width: 80px; }
+}

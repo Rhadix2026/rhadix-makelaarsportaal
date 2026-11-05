@@ -39,3 +39,31 @@ Gemeten uitvoering per stap, als basis voor latere inschattingen (stappenplan §
 | Tests | 57 (+20): woningprojecten 15, borging en regressie 6; de bestaande 36 aangepast op merknaam en juridische naam. Daarnaast 81 generatortests groen in de productie-instantie |
 | Migratie | `003_woningprojecten.sql` op de echte studio-database: de kantoornaam wordt merknaam (gecontroleerd: gegevens behouden) |
 | Verbeterpunten stap 2 | 1 labels: opgelost. 2 merknaam en juridische naam: opgelost. 3 alleen geldige profielen: keuze met omschrijving uit de generator, en een melding bij een ongeldige opgeslagen waarde. 4 logo en huisstijl: gepland bij stap 4 (uploads). 5 kantoor als standaard: opgelost en getest. 6 alleen een testdatabase: drievoudig geborgd en getest |
+
+## Stap 4: aanlevering, brochure-import en kantoorhuisstijl (05-11-2026)
+
+| Meting | Waarde |
+|---|---|
+| Start (akkoord ontvangen) | 2026-11-05 16:00:22 UTC |
+| Oplevering | 2026-11-05 ±16:30 UTC |
+| Doorlooptijd | ±30 min |
+| Iteraties | 3 rondes. (1) Mijn shell gebruikte Node 20 (de nvm-standaard). pdfjs vraagt Node ≥ 22, dus de importtest faalde; alle tests en de verwerking draaien nu op Node 24, zoals `.nvmrc` voorschrijft. (2) Een testbeeld werd terecht als dubbel herkend (gelijke compositie); de test is aangepast. (3) Opmaak en gebruik: dubbele React-sleutels in de meldingen, en een knop "overgenomen gegevens zonder melding goedkeuren", omdat 22 losse klikken onwerkbaar bleken |
+| Tests | 63 (+6 aanlevering: upload, dubbelen, woningtype, Markt 27-import veld voor veld gelijk aan de generator met bescherming, opslaan en RLS, huisstijl). Daarnaast 81 generatortests groen en de productie-instantie ongewijzigd |
+| Migratie | `004_aanlevering.sql` op de echte studio-database. Daarvóór een back-up in `data/backups/` (niet in git) |
+
+### Praktijktest Markt 27 Wolvega (Linde Makelaars)
+
+Uitgevoerd in een tijdelijke demo-omgeving (`studio_demo`, 5481/8481), met de originele brochure
+(5,2 MB, 36 pagina's) en de beeldclassificatie aan. Daarna verwijderd.
+
+| Meting | Waarde |
+|---|---|
+| Project aanmaken (alleen kantoor en naam) tot gecontroleerde import | 30,3 s |
+| Verwerking | 29,7 s: import 2,4 s (PDF lezen 1,7 s, beelden 0,7 s), generatorcontrole 0,1 s, beeldclassificatie 26,7 s (inclusief het laden van het model) |
+| Upload brochure | 0,02 s (lokaal) |
+| Gevonden | 34 foto's, 2 plattegronden, logo, 18 kenmerken, adres, postcode, plaats, woningtype (maisonnette), disclaimer. 22 gegevens automatisch aangevuld; vraagprijs herkend en bewust niet bewaard; 21 onderdelen uitgesloten van publicatie |
+| Classificatie | 34 foto's, waarvan 3 ter controle (vraagteken). Een tweede indeling na 2 extra foto's: 16,7 s |
+| Correcties van waarden | **0**: alle 22 waarden zijn gelijk aan de goedgekeurde referentie (concept-5) |
+| Handmatige beslissingen | 2 tegenstrijdigheden (kamers 3 ↔ 4, buitenruimte balkon ↔ zonneterras): beide besloten zoals in concept-5. 20 overige gegevens met één knop goedgekeurd. Profiel 'stads' (voorstel) gekozen. Brochurelogo als kantoorlogo (merk #04158A, detail #F02B89). Lege kantoorgegevens aangevuld (telefoon, e-mail, website, adres). Aanlevering opgeslagen als versie 1. In totaal 7 handelingen |
+| Nog open voor stap 5 | Rechten bevestigen en domein (blokkades van `controleerAanlevering`); 33 brochurebeelden < 1200 px (originele foto's opvragen); geen slottekst |
+| Dubbelherkenning | Getoetst met 2 vergrote kopieën van brochurefoto's als "losse foto's": beide brochurefoto's werden als dubbel gemarkeerd, de losse foto ging voor |

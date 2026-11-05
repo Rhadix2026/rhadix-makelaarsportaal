@@ -10,6 +10,11 @@ import { alsGebruiker, databaseStatus, migreer, pool } from './db.ts';
 import { generatorStatus, profielCatalogus, profielen, standaardOntwerpsysteem } from './generator.ts';
 import { COOKIE, beeindigSessie, leesCookie, meldAan, sessieCookie, sessieGebruiker, wisCookie } from './auth.ts';
 import { leesKantoor, lijstKantoren, maakKantoor, valideerKantoor, wijzigKantoor } from './kantoren.ts';
+import { extractieVoor, herstelVerwerkingen, leverAan, overzicht, slaOp, trekIn, vraagVerwerking, wekVerwerker } from './aanlevering.ts';
+import { bewerkGegeven } from './gegevens.ts';
+import { bevestigVoorstel, leesHuisstijl, logoUitBrochure, uploadLogo } from './huisstijl.ts';
+import { miniatuur, opslagPad } from './opslag.ts';
+import { createReadStream } from 'node:fs';
 import { leesProject, lijstProjecten, maakProject, STATUSSEN, telling, valideerProject, wijzigProject, WONINGTYPEN } from './projecten.ts';
 
 const STUDIO_VERSIE = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version as string;
@@ -39,6 +44,9 @@ function dbFout(e: unknown, reply: FastifyReply) {
 export function bouwApp() {
   const app = Fastify({ logger: { level: 'warn' }, bodyLimit: 64 * 1024 });
   app.decorateRequest('gebruiker', '');
+  // Bestanden komen als ruwe inhoud binnen (één bestand per verzoek); het type volgt uit de inhoud zelf.
+  for (const type of ['application/pdf', 'application/octet-stream', /^image\//])
+    app.addContentTypeParser(type, { parseAs: 'buffer', bodyLimit: 160 * 1024 * 1024 }, (_req, body, done) => done(null, body));
 
   const toegestaneHerkomst = new Set([`http://127.0.0.1:${config.webPoort}`, `http://localhost:${config.webPoort}`]);
 
@@ -149,6 +157,116 @@ export function bouwApp() {
     } catch (e) { return dbFout(e, reply); }
   });
 
+  // ── Aanlevering: bestanden, verwerkingen, gegevens ─────────────────────
+  const UPLOAD = { preHandler: alleenPlatform, bodyLimit: 160 * 1024 * 1024 };
+  const bestandsnaam = (req: FastifyRequest) => { try { return decodeURIComponent(String(req.headers['x-bestandsnaam'] ?? '')); } catch { return ''; } };
+  const isBuffer = (b: unknown): b is Buffer => Buffer.isBuffer(b);
+
+  app.post<{ Params: { id: string }; Querystring: { soort?: string } }>('/api/projecten/:id/bestanden', UPLOAD, async (req, reply) => {
+    const soort = req.query.soort;
+    if (soort !== 'brochure' && soort !== 'foto') return reply.code(400).send({ fout: 'soort moet brochure of foto zijn' });
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Woningproject niet gevonden' });
+    if (!isBuffer(req.body)) return reply.code(415).send({ fout: 'Stuur het bestand als ruwe inhoud' });
+    const body = req.body;
+    const r = await alsGebruiker(req.gebruiker, (c) => leverAan(c, req.gebruiker, req.params.id, soort, bestandsnaam(req), body));
+    if ('fout' in r) return reply.code(r.fout === 'onbekend' ? 404 : r.fout === 'grootte' ? 413 : 415).send({ fout: r.melding });
+    return reply.code(r.al_aanwezig ? 200 : 201).send(r);
+  });
+
+  app.delete<{ Params: { id: string } }>('/api/bestanden/:id', { preHandler: alleenPlatform }, async (req, reply) => {
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Bestand niet gevonden' });
+    const ok = await alsGebruiker(req.gebruiker, (c) => trekIn(c, req.gebruiker, req.params.id));
+    return ok ? { ok } : reply.code(404).send({ fout: 'Bestand niet gevonden of niet in te trekken' });
+  });
+
+  // Bestanden tonen: alleen wie het project (of kantoor) mag zien; nooit als uitvoerbare pagina.
+  const toonBestand = (klein: boolean) => async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Bestand niet gevonden' });
+    const b = await alsGebruiker(req.gebruiker, async (c) => (await c.query('SELECT opslag, mime, sha256, originele_naam FROM bestand WHERE id = $1', [req.params.id])).rows[0]);
+    if (!b) return reply.code(404).send({ fout: 'Bestand niet gevonden' });
+    reply.header('x-content-type-options', 'nosniff').header('cache-control', 'private, max-age=3600')
+      .header('content-security-policy', "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox");
+    if (klein && b.mime.startsWith('image/')) return reply.type('image/webp').send(await miniatuur(b.opslag, b.sha256));
+    reply.header('content-disposition', `inline; filename*=UTF-8''${encodeURIComponent(b.originele_naam.split('/').pop())}`);
+    return reply.type(b.mime).send(createReadStream(opslagPad(b.opslag)));
+  };
+  app.get('/api/bestanden/:id', toonBestand(false));
+  app.get('/api/bestanden/:id/miniatuur', toonBestand(true));
+
+  app.get<{ Params: { id: string } }>('/api/projecten/:id/aanlevering', async (req, reply) => {
+    const o = await alsGebruiker(req.gebruiker, (c) => overzicht(c, req.params.id));
+    return o ?? reply.code(404).send({ fout: 'Woningproject niet gevonden' });
+  });
+
+  app.post<{ Params: { id: string }; Body: { soort?: string } }>('/api/projecten/:id/verwerkingen', { preHandler: alleenPlatform }, async (req, reply) => {
+    const soort = req.body?.soort;
+    if (soort !== 'brochure-import' && soort !== 'foto-indeling') return reply.code(400).send({ fout: 'Onbekende verwerking' });
+    const r = await alsGebruiker(req.gebruiker, (c) => vraagVerwerking(c, req.gebruiker, req.params.id, soort));
+    if ('fout' in r) return reply.code(r.fout === 'onbekend' ? 404 : 409).send({ fout: ({
+      onbekend: 'Woningproject niet gevonden', lopend: 'Er loopt al een verwerking voor dit project',
+      geen_brochure: 'Lever eerst een brochure aan', geen_fotos: 'Er zijn nog geen foto\'s om in te delen' } as Record<string, string>)[r.fout!] });
+    void wekVerwerker();
+    return reply.code(202).send(r.verwerking);
+  });
+
+  app.put<{ Params: { id: string; sleutel: string }; Body: { actie?: string; waarde?: unknown; label?: string; eenheid?: string | null; bevestigd?: boolean } }>(
+    '/api/projecten/:id/gegevens/:sleutel', { preHandler: alleenPlatform }, async (req, reply) => {
+      const { id, sleutel } = req.params;
+      if (!UUID.test(id)) return reply.code(404).send({ fout: 'Woningproject niet gevonden' });
+      if (!/^[a-z][a-z0-9_:.-]{0,80}$/.test(sleutel)) return reply.code(400).send({ fout: 'Ongeldig gegeven' });
+      const r = await alsGebruiker(req.gebruiker, async (c) => {
+        const p = await leesProject(c, id);
+        if (!p) return { fout: 'project' as const };
+        return bewerkGegeven(c, req.gebruiker, p, sleutel, { actie: String(req.body?.actie ?? ''), ...req.body }, await extractieVoor(c, id, sleutel));
+      });
+      if ('fout' in r) {
+        const [code, fout] = ({
+          project: [404, 'Woningproject niet gevonden'], onbekend: [404, 'Dit gegeven is nog niet vastgelegd'], label: [400, 'Geef een omschrijving van het gegeven'],
+          waarde: [400, ('melding' in r && r.melding) || 'Ongeldige waarde'], geen_extractie: [409, 'De brochure bevat dit gegeven niet'],
+          bevestiging: [409, 'Dit gegeven is goedgekeurd of handmatig ingevoerd. Bevestig dat de brochurewaarde het mag vervangen.'],
+          actie: [400, 'Onbekende handeling'], geweigerd: [403, 'Geen rechten voor deze handeling'],
+        } as Record<string, [number, string]>)[r.fout as string];
+        return reply.code(code).send({ fout });
+      }
+      return r.gegeven;
+    });
+
+  app.post<{ Params: { id: string } }>('/api/projecten/:id/aanleveringen', { preHandler: alleenPlatform }, async (req, reply) => {
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Woningproject niet gevonden' });
+    const r = await alsGebruiker(req.gebruiker, (c) => slaOp(c, req.gebruiker, req.params.id));
+    if ('fout' in r) return reply.code(r.fout === 'onbekend' ? 404 : 409).send({ fout: r.fout === 'onbekend' ? 'Woningproject niet gevonden' : 'Wacht tot de verwerking klaar is' });
+    return reply.code(201).send(r.aanlevering);
+  });
+
+  // ── Kantoorhuisstijl ────────────────────────────────────────────────────
+  app.get<{ Params: { id: string } }>('/api/kantoren/:id/huisstijl', async (req, reply) => {
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Kantoor niet gevonden' });
+    const h = await alsGebruiker(req.gebruiker, (c) => leesHuisstijl(c, req.params.id));
+    return h ?? reply.code(404).send({ fout: 'Kantoor niet gevonden' });
+  });
+
+  const huisstijlAntwoord = (reply: FastifyReply, r: { fout?: string; melding?: string; huisstijl?: unknown }) => r.fout
+    ? reply.code(r.fout === 'onbekend' ? 404 : r.fout === 'geweigerd' ? 403 : r.fout === 'grootte' ? 413 : r.fout === 'geen_voorstel' ? 409 : 415)
+      .send({ fout: r.melding ?? (r.fout === 'geen_voorstel' ? 'Er is geen voorstel uit een logo' : 'Geen rechten voor deze handeling') })
+    : r.huisstijl;
+
+  app.post<{ Params: { id: string } }>('/api/kantoren/:id/logo', UPLOAD, async (req, reply) => {
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Kantoor niet gevonden' });
+    if (!isBuffer(req.body)) return reply.code(415).send({ fout: 'Stuur het logo als ruwe inhoud' });
+    const body = req.body;
+    return huisstijlAntwoord(reply, await alsGebruiker(req.gebruiker, (c) => uploadLogo(c, req.gebruiker, req.params.id, bestandsnaam(req), body)));
+  });
+
+  app.post<{ Params: { id: string }; Body: { bestand_id?: string } }>('/api/kantoren/:id/logo/brochure', { preHandler: alleenPlatform }, async (req, reply) => {
+    if (!UUID.test(req.params.id) || !UUID.test(String(req.body?.bestand_id))) return reply.code(404).send({ fout: 'Niet gevonden' });
+    return huisstijlAntwoord(reply, await alsGebruiker(req.gebruiker, (c) => logoUitBrochure(c, req.gebruiker, req.params.id, String(req.body.bestand_id))));
+  });
+
+  app.post<{ Params: { id: string } }>('/api/kantoren/:id/huisstijl/voorstel', { preHandler: alleenPlatform }, async (req, reply) => {
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Kantoor niet gevonden' });
+    return huisstijlAntwoord(reply, await alsGebruiker(req.gebruiker, (c) => bevestigVoorstel(c, req.gebruiker, req.params.id)));
+  });
+
   // ── Systeembeheer (technische status; alleen platformbeheer) ────────────
   app.get('/api/status', { preHandler: alleenPlatform }, async () => {
     const [database, generator] = await Promise.all([databaseStatus(), generatorStatus()]);
@@ -166,7 +284,9 @@ export function bouwApp() {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   await migreer();
+  await herstelVerwerkingen();
   const app = bouwApp();
   await app.listen({ host: config.host, port: config.apiPoort });
   console.log(`studio-API op http://${config.host}:${config.apiPoort}`);
+  void wekVerwerker();
 }

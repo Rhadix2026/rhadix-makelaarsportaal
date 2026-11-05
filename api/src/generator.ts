@@ -81,3 +81,36 @@ function chromiumStatus() {
     return { beschikbaar: false, fout: (e as Error).message };
   }
 }
+
+// ── Stap 4: bestaande functies voor import, beelden, huisstijl en controle ──
+// Rechtstreeks uit de productie-instantie geïmporteerd; de studio implementeert ze niet opnieuw.
+// sharp komt uit dezelfde instantie, zodat beeldbewerking exact gelijk is aan die van de generator.
+export const generatorRequire = createRequire(join(G, 'package.json'));
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const sharp = generatorRequire('sharp') as (input?: Buffer | string, opties?: object) => any;
+
+type Kleur = { kleur: string; aandeel: number };
+export type HuisstijlVoorstel = { bron: string; merk: string; detail: string; licht: Record<string, string>; donker: Record<string, string>; favicon: string };
+
+export async function huisstijlFuncties() {
+  const h = await importeer('packages/import/huisstijl.mjs');
+  const t = await importeer('packages/tokens/index.mjs');
+  return {
+    logoKleuren: h.logoKleuren as (bytes: Buffer) => Promise<Kleur[]>,
+    huisstijlVoorstel: h.huisstijlVoorstel as (kleuren: Kleur[], profiel: unknown) => HuisstijlVoorstel | null,
+    laadProfiel: t.laadProfiel as (naam: string) => { kleuren: { licht: Record<string, string>; donker: Record<string, string> } },
+    contrast: t.contrast as (a: string, b: string) => number,
+  };
+}
+
+export async function hamming(a: string, b: string): Promise<number> {
+  const { hamming: h } = await importeer('packages/media/index.mjs');
+  return h(a, b);
+}
+
+export async function leesTeksten(md: string) {
+  const { leesTeksten: l } = await importeer('packages/aanlevering/index.mjs');
+  return l(md) as { verhaal: { hoofdstukken: { id: string; titel?: string; nav?: string; alineas?: ({ prose?: string; lijst?: string[]; accent?: string })[] }[] }; fouten: string[] };
+}
+
+export function generatorCommit() { return git('rev-parse', 'HEAD'); }
