@@ -68,12 +68,14 @@ export async function exporteer(c: pg.PoolClient, projectId: string, map: string
   }
   for (const x of losse.filter((x: Rij) => !x.dubbel_van && !geplaatst.has(x.id))) reeks.push({ b: x, hoofdstuk: hoofdstukken[0]?.id ?? 'fotos-los' });
   const rijen = ['bestand;alt;bijschrift;hero;publiceren;focus'];
+  const bestanden: { pad: string; id: string }[] = [];
   reeks.forEach(({ b, hoofdstuk }, i) => {
     const naam = `${String(i + 1).padStart(2, '0')}-${b.herkomst === 'upload' ? 'los' : `p${String(b.pagina).padStart(2, '0')}`}${extname(b.opslag).toLowerCase()}`;
     mkdirSync(join(map, 'fotos', hoofdstuk), { recursive: true });
     copyFileSync(opslagPad(b.opslag), join(map, 'fotos', hoofdstuk, naam));
     const alt = (b.herkomst === 'brochure' && importCsv.get(b.originele_naam)?.alt) || `Foto ${i + 1} bij '${titel(hoofdstuk)}', ${adres || p.naam}`;
     rijen.push(csvRij(`fotos/${hoofdstuk}/${naam}`, alt, '', p.openingsbeeld_id === b.id ? 'ja' : '', '', ''));
+    bestanden.push({ pad: `fotos/${hoofdstuk}/${naam}`, id: b.id });
   });
   const plattegronden = actief.filter((b: Rij) => b.soort === 'plattegrond');
   if (plattegronden.length) mkdirSync(join(map, 'plattegronden'), { recursive: true });
@@ -101,7 +103,8 @@ export async function exporteer(c: pg.PoolClient, projectId: string, map: string
   }
 
   // Feiten: alleen vastgelegde (niet afgewezen); goedgekeurd door ons = bevestigd.
-  const vast = o.gegevens.filter((g: Rij) => g.vastgelegd && g.vastgelegd.status !== 'afgewezen');
+  // Niet publiceren (financiële gegevens): wel vastgelegd, niet in de export naar de generator.
+  const vast = o.gegevens.filter((g: Rij) => g.vastgelegd && g.vastgelegd.status !== 'afgewezen' && g.vastgelegd.publiceren !== false);
   const feiten = vast.filter((g: Rij) => g.sleutel.startsWith('feit.')).map((g: Rij) => ({
     sleutel: g.sleutel.slice(5), label: g.label, waarde: g.vastgelegd.waarde, ...(g.vastgelegd.eenheid ? { eenheid: g.vastgelegd.eenheid } : {}),
     ...(g.extractie?.toelichting && g.vastgelegd.herkomst === 'brochure' ? { toelichting: g.extractie.toelichting } : {}),
@@ -125,7 +128,7 @@ export async function exporteer(c: pg.PoolClient, projectId: string, map: string
     rechten: p.rechten?.bevestigd ? { bevestigd: true, toelichting: p.rechten.toelichting } : { bevestigd: false },
   };
   writeFileSync(join(map, 'woning.json'), JSON.stringify(woning, null, 2) + '\n');
-  return { fotos: reeks.length, plattegronden: plattegronden.length, logo: !!logo, feiten: feiten.length, huisstijl: !!huisstijl };
+  return { fotos: reeks.length, plattegronden: plattegronden.length, logo: !!logo, feiten: feiten.length, huisstijl: !!huisstijl, bestanden };
 }
 
 /** Voert de kwaliteitscontrole uit en bewaart haar als verwerking (soort kwaliteitscontrole). */
@@ -142,7 +145,8 @@ export async function kwaliteitscontrole(c: pg.PoolClient, gebruiker: string, pr
   const qa = await generatorModule('packages/qa/index.mjs');
   const taal = await generatorModule('packages/qa/taal.mjs');
   const a = await controleerAanlevering(map);
-  const rapport: Rij = { export: exp, aanlevering: { ok: a.ok, fouten: a.fouten, waarschuwingen: a.waarschuwingen, samenvatting: a.samenvatting } };
+  const { bestanden: _b, ...expKort } = exp; void _b;
+  const rapport: Rij = { export: expKort, aanlevering: { ok: a.ok, fouten: a.fouten, waarschuwingen: a.waarschuwingen, samenvatting: a.samenvatting } };
   try {
     // Het manifest dat mp aanleveren zou maken (zonder compositie), getoetst aan het schema van de generator.
     const { manifest } = naarManifest(a.gegevens, generatorVersie(), null);
@@ -153,8 +157,12 @@ export async function kwaliteitscontrole(c: pg.PoolClient, gebruiker: string, pr
     const tl = taal.controleerTaal(taal.tekstenMetHerkomst(manifest, []), { feiten: manifest.feiten });
     rapport.taal = { blokkerend: tl.blokkerend, waarschuwingen: tl.waarschuwingen, meetwaarden: tl.meetwaarden };
     // Bedragen in de teksten (prijzen en lasten publiceren we niet zonder bewuste keuze): ter beoordeling.
+    const financieel = (await c.query("SELECT label, waarde FROM gegeven WHERE project_id = $1 AND NOT publiceren AND status <> 'afgewezen'", [projectId])).rows;
     rapport.bedragen = taal.tekstenMetHerkomst(manifest, []).flatMap((t: { tekst: string; pad: string }) =>
-      [...t.tekst.matchAll(/[^.;\n]*€\s?\d[\d.,]*[^.;\n]*/g)].map((m) => m[0].trim()));
+      [...t.tekst.matchAll(/[^.;\n]*€\s?(\d[\d.,]*)[^.;\n]*/g)].map((m) => {
+        const feit = financieel.find((f) => Number(String(m[1]).replace(/\./g, '').replace(',', '.')) === Number(f.waarde));
+        return { tekst: m[0].trim(), feit: feit?.label ?? null };
+      }));
   } catch (e) {
     rapport.manifest = { fouten: [`manifest niet te maken: ${(e as Error).message.split('\n')[0]}`] };
   }
@@ -189,7 +197,11 @@ export function deelIn(r: Rij | null) {
   for (const f of r.manifest?.fouten ?? []) if (!/canonical/.test(f) || !(r.aanlevering?.fouten ?? []).some((x: string) => /canonical/.test(x))) uit.blokkerend.push({ bron: 'manifestschema', tekst: f });
   for (const f of r.feiten?.fouten ?? []) uit.blokkerend.push({ bron: 'feitencontrole', tekst: pad(f) });
   for (const m of r.feiten?.meldingen ?? []) uit.aandacht.push({ bron: 'feitencontrole', tekst: pad(m) });
-  for (const b of r.bedragen ?? []) uit.aandacht.push({ bron: 'bedragen', tekst: `Bedrag in de tekst: '${b}'. Controleer of dit gepubliceerd mag worden.` });
+  for (const b of r.bedragen ?? []) {
+    const t = typeof b === 'string' ? { tekst: b, feit: null } : b;
+    if (t.feit) uit.info.push({ bron: 'bedragen', tekst: `'${t.tekst}' is vastgelegd als feit '${t.feit}' (niet automatisch gepubliceerd). De zin staat ongewijzigd in de brochuretekst; de makelaar bepaalt wat er op de website komt.` });
+    else uit.aandacht.push({ bron: 'bedragen', tekst: `Bedrag in de tekst: '${t.tekst}'. Leg het vast als feit of controleer of het gepubliceerd mag worden.` });
+  }
   for (const b of r.taal?.blokkerend ?? []) uit.blokkerend.push({ bron: 'taalcontrole', tekst: b.melding });
   for (const w of r.taal?.waarschuwingen ?? []) uit.aandacht.push({ bron: `taalcontrole (${w.controle})`, tekst: pad(w.melding) });
   if (r.feiten) uit.info.push({ bron: 'feitencontrole', tekst: `${r.feiten.getoetst} maten in de teksten getoetst aan de feiten` });
@@ -219,6 +231,8 @@ export async function beoordeling(c: pg.PoolClient, projectId: string) {
     afgewezen: g.filter((x) => x.vastgelegd?.status === 'afgewezen').length,
     tegenstrijdig: g.filter((x) => x.conflict).length,
     opgelost: g.filter((x) => x.conflict && x.vastgelegd?.besluit).length,
+    inhoudelijk: g.filter((x) => x.conflict?.ernst === 'conflict').length,
+    inhoudelijk_opgelost: g.filter((x) => x.conflict?.ernst === 'conflict' && x.vastgelegd?.besluit).length,
     ontbrekend: g.filter((x) => !x.vastgelegd).length,
   };
   const teBeoordelen = g.filter((x) => x.vastgelegd?.status === 'overgenomen' || x.signalen.some((s: string) => s === 'tegenstrijdigheid' || s === 'terminologie')
@@ -241,34 +255,43 @@ export async function beoordeling(c: pg.PoolClient, projectId: string) {
 
   const lopend = (o.verwerkingen as Rij[]).some((v) => v.soort !== 'kwaliteitscontrole' && ['wachtrij', 'bezig'].includes(v.status));
   const actueel = !!kc && kc.vingerafdruk === vinger;
-  const punt = (fase: number, code: string, titel: string, ok: boolean, actie: string) => ({ fase, code, titel, ok, actie: ok ? null : actie });
+  // Verplicht (blokkeert de conceptgeneratie): kritische gegevens, onopgeloste inhoudelijke
+  // tegenstrijdigheden en de keuzes die de generator nodig heeft. Aanbevolen punten blokkeren niet,
+  // maar blijven zichtbaar. Publicatie krijgt later eigen, strengere controles.
+  const punt = (fase: number, code: string, titel: string, ok: boolean, actie: string, verplicht = true) => ({ fase, code, titel, ok, verplicht, actie: ok ? null : actie });
   const checklist = [
     punt(1, 'import', 'Brochure aangeleverd en geïmporteerd', !!o.import, 'Lever de brochure aan en start de import.'),
     punt(1, 'verwerking', 'Geen verwerking meer bezig', !lopend, 'Wacht tot de verwerking klaar is.'),
-    punt(2, 'gegevens', 'Alle gegevens beoordeeld', telling.overgenomen === 0, `Beoordeel nog ${telling.overgenomen} gegeven(s): goedkeuren, corrigeren of afwijzen.`),
-    punt(2, 'tegenstrijdigheden', 'Tegenstrijdigheden en terminologische afwijkingen besloten', telling.opgelost === telling.tegenstrijdig, `Leg een besluit vast voor ${telling.tegenstrijdig - telling.opgelost} tegenstrijdigheid/afwijking(en).`),
+    punt(2, 'tegenstrijdigheden', 'Inhoudelijke tegenstrijdigheden besloten', telling.inhoudelijk_opgelost === telling.inhoudelijk,
+      `Leg een besluit vast voor ${telling.inhoudelijk - telling.inhoudelijk_opgelost} inhoudelijke tegenstrijdigheid/tegenstrijdigheden.`),
+    punt(2, 'gegevens', 'Alle gegevens beoordeeld', telling.overgenomen === 0, `${telling.overgenomen} gegeven(s) nog niet beoordeeld; ze gaan als onbevestigd mee in het concept.`, false),
+    punt(2, 'terminologie', 'Terminologische afwijkingen beoordeeld', telling.opgelost - telling.inhoudelijk_opgelost === telling.tegenstrijdig - telling.inhoudelijk,
+      'Beoordeel de mogelijke terminologische afwijking(en).', false),
     punt(2, 'verplicht', 'Straat, huisnummer en plaats vastgelegd', ['adres', 'plaats'].every((s) => g.some((x) => x.sleutel === s && x.vastgelegd && x.vastgelegd.status !== 'afgewezen')), 'Vul straat, huisnummer en plaats aan.'),
     punt(3, 'rechten', 'Publicatierechten foto\'s en teksten bevestigd', !!p.rechten?.bevestigd, 'Bevestig de publicatierechten, met een korte toelichting.'),
     punt(3, 'profiel', 'Presentatieprofiel gekozen', !!p.profiel, 'Kies het presentatieprofiel.'),
     punt(3, 'websiteadres', 'Websiteadres vastgelegd', !!p.domein || p.conceptadres, 'Vul het domein in of kies een tijdelijk conceptadres.'),
     punt(3, 'openingsbeeld', 'Openingsbeeld gekozen', !!hero && geschiktHero.some((b) => b.id === hero.id), geschiktHero.length ? 'Kies het openingsbeeld uit de geschikte foto\'s.' : `Geen foto is geschikt (liggend, ≥ ${heroNorm} px): lever een origineel aan.`),
-    punt(3, 'fotokwaliteit', 'Fotokwaliteit beoordeeld', fotoAkkoord, 'Beslis of het eerste concept met de huidige beelden mag worden gemaakt (originelen worden opgevraagd).'),
+    punt(3, 'fotokwaliteit', 'Fotokwaliteit beoordeeld', fotoAkkoord, 'Originele foto\'s ontbreken; het concept gebruikt de brochurebeelden.', false),
     punt(3, 'kwaliteitscontrole', 'Kwaliteitscontrole uitgevoerd op de huidige stand, zonder blokkades', actueel && resultaat.blokkerend.length === 0,
       !kc ? 'Voer de kwaliteitscontrole uit.' : !actueel ? 'Er is iets gewijzigd: voer de kwaliteitscontrole opnieuw uit.' : `Los ${resultaat.blokkerend.length} blokkade(s) op en voer de controle opnieuw uit.`),
   ];
-  const vrijgegeven = o.project.status === 'klaar_voor_productie' && !!p.vrijgave?.op && !p.vrijgave?.vervallen_op;
-  const klaar = checklist.every((x) => x.ok);
+  // Vrijgegeven blijft gelden na het genereren (status interne review of correctie); een wijziging
+  // vóór de generatie laat de vrijgave vervallen (trigger), daarna bewaakt de vingerafdruk de actualiteit.
+  const vrijgegeven = o.project.status !== 'aanlevering_incompleet' && !!p.vrijgave?.op && !p.vrijgave?.vervallen_op;
+  const klaar = checklist.filter((x) => x.verplicht).every((x) => x.ok);
   const faseStatus = (n: number) => {
     const punten = checklist.filter((x) => x.fase === n);
-    const open = punten.filter((x) => !x.ok).length;
-    const eerder = checklist.filter((x) => x.fase < n).every((x) => x.ok);
-    return { open, status: open === 0 ? 'gereed' : eerder ? 'open' : 'wacht' };
+    const open = punten.filter((x) => !x.ok && x.verplicht).length;
+    const aanbevolen = punten.filter((x) => !x.ok && !x.verplicht).length;
+    const eerder = checklist.filter((x) => x.fase < n && x.verplicht).every((x) => x.ok);
+    return { open, aanbevolen, status: open === 0 ? 'gereed' : eerder ? 'open' : 'wacht' };
   };
   const fasen = [
     { nr: 1, naam: 'Aanlevering', ...faseStatus(1) },
     { nr: 2, naam: 'Broncontrole', ...faseStatus(2) },
     { nr: 3, naam: 'Kwaliteitscontrole', ...faseStatus(3) },
-    { nr: 4, naam: 'Vrijgave voor conceptgeneratie', open: vrijgegeven ? 0 : 1, status: vrijgegeven ? 'gereed' : klaar ? 'open' : 'wacht' },
+    { nr: 4, naam: 'Vrijgave voor conceptgeneratie', open: vrijgegeven ? 0 : 1, aanbevolen: 0, status: vrijgegeven ? 'gereed' : klaar ? 'open' : 'wacht' },
   ];
   return {
     project: o.project, fasen, checklist, klaar, vingerafdruk: vinger,
@@ -317,7 +340,7 @@ export async function beslis(c: pg.PoolClient, gebruiker: string, projectId: str
     if (motivering.length < 3) return { fout: 'motivering' as const };
     await log('geaccepteerd voor eerste concept', { fotoset: st.beslissingen.fotokwaliteit.fotoset, originelen_nodig: st.fotokwaliteit.originelen_nodig, geschikt: st.fotokwaliteit.geschikt });
   } else if (onderwerp === 'vrijgave') {
-    if (!st.klaar) return { fout: 'niet_klaar' as const, open: st.checklist.filter((x) => !x.ok) };
+    if (!st.klaar) return { fout: 'niet_klaar' as const, open: st.checklist.filter((x) => !x.ok && x.verplicht) };
     // Vrijgave voor conceptgeneratie; nooit publicatie. Er wordt niets gegenereerd.
     await zet(`status = 'klaar_voor_productie', vrijgave = $2`, [JSON.stringify({ door: gebruiker, op: new Date().toISOString(), motivering: motivering || null,
       vingerafdruk: st.vingerafdruk, kwaliteitscontrole: st.kwaliteit?.id, betekenis: 'gereed voor een eerste concept; geen publicatie' })]);

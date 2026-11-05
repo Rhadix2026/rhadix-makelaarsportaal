@@ -10,7 +10,7 @@ import { alsGebruiker, audit, pool } from './db.ts';
 import { aanleverEisen, generatorCommit, hamming, leesTeksten } from './generator.ts';
 import { fotokwaliteit, meldingen, signalen, SIGNAAL_TEKST, vergelijkMakelaar } from './beoordeling.ts';
 import { beeldInfo, bewaar, herkenType, MAX_GROOTTE, opslagPad, sha256 } from './opslag.ts';
-import { kandidaten, vulAan, type Conflict, type Kandidaat } from './gegevens.ts';
+import { financieleKandidaten, kandidaten, vulAan, type Conflict, type Kandidaat } from './gegevens.ts';
 import { leesProject } from './projecten.ts';
 import { legVast } from './besluiten.ts';
 
@@ -131,6 +131,14 @@ export async function verwerkVolgende(): Promise<boolean> {
       [v.project_id])).rows;
     let invoer: object;
     let uitmap: string | null = null;
+    if (v.soort === 'conceptgeneratie') {
+      // Conceptgeneratie: voorbereiden in de studio, bouwen en toetsen in het kindproces (mp bouw, mp kwaliteit).
+      const k = await import('./concepten.ts');
+      const voor = await alsGebruiker(v.aangevraagd_door, (c) => k.bereidVoor(c, v));
+      const r = await draaiKind(voor.invoer);
+      await alsGebruiker(v.aangevraagd_door, (c) => k.registreer(c, v, voor.meta, r, Date.now() - t0));
+      return true;
+    }
     if (v.soort === 'brochure-import') {
       const b = (await pool.query('SELECT opslag FROM bestand WHERE id = $1', [v.bestand_id])).rows[0];
       uitmap = `projecten/${v.project_id}/import/${v.volgnummer}`;
@@ -184,7 +192,7 @@ async function verwerkUitkomst(c: pg.PoolClient, v: Record<string, any>, uitmap:
     }
     if (r.classificatie?.resultaten) r.classificatie.resultaten = Object.fromEntries(Object.entries(r.classificatie.resultaten).map(([k, x]) => [ids.get(k) ?? k, x]));
     const project = await leesProject(c, v.project_id);
-    samenvatting = await vulAan(c, gebruiker, project, v.id, kandidaten(rapport));
+    samenvatting = await vulAan(c, gebruiker, project, v.id, kandidatenVan(v.project_id, { volgnummer: v.volgnummer, rapport }));
     await c.query('UPDATE verwerking SET rapport = $2, controle = $3 WHERE id = $1', [v.id, JSON.stringify(rapport), JSON.stringify(r.controle)]);
   }
   if (r.classificatie?.beschikbaar) {
@@ -205,9 +213,16 @@ export async function laatsteImport(c: pg.PoolClient, projectId: string) {
   return (await c.query(`SELECT * FROM verwerking WHERE project_id = $1 AND soort = 'brochure-import' AND status = 'klaar' ORDER BY volgnummer DESC LIMIT 1`, [projectId])).rows[0] ?? null;
 }
 
+/** Alle kandidaten van een import: het importrapport plus de financiële gegevens uit de teksten. */
+export function kandidatenVan(projectId: string, imp: { volgnummer: number; rapport: Record<string, any> }): Kandidaat[] { // eslint-disable-line @typescript-eslint/no-explicit-any
+  let md = '';
+  try { md = readFileSync(opslagPad(`projecten/${projectId}/import/${imp.volgnummer}/teksten.md`), 'utf8'); } catch { /* geen teksten */ }
+  return [...kandidaten(imp.rapport as never), ...financieleKandidaten(md, imp.rapport.hoofdstukken ?? [])];
+}
+
 export async function extractieVoor(c: pg.PoolClient, projectId: string, sleutel: string): Promise<Kandidaat | null> {
   const imp = await laatsteImport(c, projectId);
-  return imp ? kandidaten(imp.rapport).find((k) => k.sleutel === sleutel) ?? null : null;
+  return imp ? kandidatenVan(projectId, imp).find((k) => k.sleutel === sleutel) ?? null : null;
 }
 
 export async function conflictVoor(c: pg.PoolClient, projectId: string, sleutel: string): Promise<Conflict | null> {
@@ -224,7 +239,7 @@ export async function overzicht(c: pg.PoolClient, projectId: string) {
     FROM verwerking WHERE project_id = $1 ORDER BY volgnummer DESC LIMIT 10`, [projectId])).rows;
   const imp = await laatsteImport(c, projectId);
   const vast = new Map((await c.query('SELECT * FROM gegeven WHERE project_id = $1', [projectId])).rows.map((r) => [r.sleutel, r]));
-  const kand = imp ? kandidaten(imp.rapport) : [];
+  const kand = imp ? kandidatenVan(projectId, imp) : [];
   const conflicten = new Map<string, { ernst: string; bronnen: string[] }>(
     (imp?.rapport.conflicten ?? []).map((x: { gegeven: string; ernst: string; bronnen: string[] }) => [`feit.${x.gegeven}`, { ernst: x.ernst, bronnen: x.bronnen }]));
   const sleutels = [...new Set([...['adres', 'postcode', 'plaats', 'woningtype'], ...kand.map((k) => k.sleutel), ...vast.keys()])];
@@ -251,7 +266,7 @@ export async function overzicht(c: pg.PoolClient, projectId: string) {
     } catch { teksten = []; }
   }
   const aanleveringen = (await c.query(`SELECT a.versie, a.opgeslagen_op, g.naam AS door, a.inhoud->'samenvatting' AS samenvatting
-    FROM aanlevering a JOIN gebruiker g ON g.id = a.opgeslagen_door WHERE a.project_id = $1 ORDER BY a.versie DESC`, [projectId])).rows;
+    FROM aanlevering a LEFT JOIN gebruiker g ON g.id = a.opgeslagen_door WHERE a.project_id = $1 ORDER BY a.versie DESC`, [projectId])).rows;
   const kantoor = (await c.query('SELECT id, merknaam, juridische_naam, telefoon, email, website, adresregels, logo_id FROM kantoor WHERE id = $1', [project.kantoor_id])).rows[0];
   // Handmatige correcties: alles wat wij zelf hebben vastgelegd of bevestigd na de laatste import.
   const ingrepen = (await c.query(`SELECT actie, count(*)::int AS n FROM auditregel WHERE tabel = 'gegeven' AND rij_id LIKE $1 AND actie LIKE 'gegeven\\_%' GROUP BY actie`,

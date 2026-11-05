@@ -71,8 +71,8 @@ export function BeoordelingScherm({ id, ik }: { id: string; ik: Ik }) {
   const per = (fase: number) => d.checklist.filter((x) => x.fase === fase);
   const Punten = ({ fase }: { fase: number }) => (
     <ul className="checklist">{per(fase).map((x) => (
-      <li key={x.code} className={x.ok ? 'ok' : 'open'}><span className="vink" aria-hidden="true">{x.ok ? '✓' : '!'}</span>
-        <span><strong>{x.titel}</strong>{x.actie && <span className="checklist-actie"> {x.actie}</span>}</span></li>))}</ul>
+      <li key={x.code} className={x.ok ? 'ok' : x.verplicht ? 'open' : 'aanbevolen'}><span className="vink" aria-hidden="true">{x.ok ? '✓' : x.verplicht ? '!' : 'i'}</span>
+        <span><strong>{x.titel}</strong>{!x.ok && !x.verplicht && <span className="bron"> (aanbevolen; blokkeert de conceptgeneratie niet)</span>}{x.actie && <span className="checklist-actie"> {x.actie}</span>}</span></li>))}</ul>
   );
 
   return (
@@ -90,18 +90,20 @@ export function BeoordelingScherm({ id, ik }: { id: string; ik: Ik }) {
       <section className={`kaart vrijgave vrijgave-${d.vrijgave.vrijgegeven ? 'gereed' : d.klaar ? 'klaar' : 'niet'}`} id="fase-4">
         <h2>4. Vrijgave voor conceptgeneratie</h2>
         {d.vrijgave.vrijgegeven ? (
-          <p className="vrijgave-status"><Badge toon="goed">vrijgegeven</Badge> op {datum(d.vrijgave.op)}{d.vrijgave.motivering ? ` · ${d.vrijgave.motivering}` : ''}. De woning is gereed voor een eerste concept. Dit is geen toestemming voor publicatie.</p>
+          <p className="vrijgave-status"><Badge toon="goed">vrijgegeven</Badge> op {datum(d.vrijgave.op)}{d.vrijgave.motivering ? ` · ${d.vrijgave.motivering}` : ''}. De woning is gereed voor een eerste concept. Dit is geen toestemming voor publicatie.
+            {' '}<a href={`#/projecten/${id}/concept`}>Naar concept en preview →</a></p>
         ) : d.klaar ? (
           <p className="vrijgave-status"><Badge toon="let-op">gereed om vrij te geven</Badge> Alle verplichte controles zijn afgerond.</p>
         ) : (
-          <p className="vrijgave-status"><Badge toon="fout">nog niet gereed</Badge> {d.checklist.filter((x) => !x.ok).length} verplichte controle(s) open. Hieronder staat per punt wat er nog moet gebeuren.</p>
+          <p className="vrijgave-status"><Badge toon="fout">nog niet gereed</Badge> {d.checklist.filter((x) => !x.ok && x.verplicht).length} verplichte controle(s) open. Hieronder staat per punt wat er nog moet gebeuren.</p>
         )}
         {d.vrijgave.vervallen_op && !d.vrijgave.vrijgegeven && <p className="bron">Een eerdere vrijgave is vervallen op {datum(d.vrijgave.vervallen_op)} ({d.vrijgave.vervallen_door}).</p>}
-        {!d.vrijgave.vrijgegeven && d.checklist.some((x) => !x.ok) && (
-          <ul className="checklist">{d.checklist.filter((x) => !x.ok).map((x) => (
+        {!d.vrijgave.vrijgegeven && d.checklist.some((x) => !x.ok && x.verplicht) && (
+          <ul className="checklist">{d.checklist.filter((x) => !x.ok && x.verplicht).map((x) => (
             <li key={x.code} className="open"><span className="vink" aria-hidden="true">!</span><span><strong>{x.titel}</strong> <span className="checklist-actie">{x.actie}</span>
               <span className="bron"> (fase {x.fase})</span></span></li>))}</ul>
         )}
+        {d.checklist.some((x) => !x.ok && !x.verplicht) && <p className="bron">Open aandachtspunten (blokkeren niet, blijven zichtbaar): {d.checklist.filter((x) => !x.ok && !x.verplicht).map((x) => x.titel.toLowerCase()).join('; ')}. Publicatie kent afzonderlijke, strengere controles.</p>}
         {beheer && (d.vrijgave.vrijgegeven ? (
           <div className="inline-form" style={{ marginTop: 10 }}>
             <input aria-label="Reden voor intrekken" placeholder="Reden voor intrekken (verplicht)" value={veld.intrekken ?? ''} onChange={zet('intrekken')} />

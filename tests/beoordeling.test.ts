@@ -49,7 +49,7 @@ test('Markt 27: van aanlevering via broncontrole en kwaliteitscontrole naar vrij
   b = await st();
   assert.equal(b.fasen[0].status, 'gereed');
   assert.equal(b.fasen[1].status, 'open');
-  assert.equal(b.broncontrole.telling.overgenomen, 22);
+  assert.equal(b.broncontrole.telling.overgenomen, 23, '22 uit het importrapport + de VvE-bijdrage uit de tekst');
   assert.equal(b.broncontrole.telling.tegenstrijdig, 2);
   assert.equal(b.broncontrole.telling.opgelost, 0);
   assert.equal(b.klaar, false);
@@ -94,7 +94,7 @@ test('Markt 27: van aanlevering via broncontrole en kwaliteitscontrole naar vrij
   await req('beheer', 'POST', `/api/projecten/${P}/kwaliteitscontrole`);
   b = await st();
   assert.deepEqual(b.kwaliteit.resultaat.blokkerend, []);
-  assert.ok(b.kwaliteit.resultaat.aandacht.some((x: { tekst: string }) => /€ 158/.test(x.tekst)), 'bedrag in de tekst ter beoordeling');
+  assert.ok(b.kwaliteit.resultaat.info.some((x: { tekst: string }) => /€ 158.*vastgelegd als feit 'Bijdrage VvE'/.test(x.tekst)), 'VvE-bedrag vastgelegd als feit: informatie, blokkeert niet');
   assert.ok(b.checklist.every((x: { ok: boolean }) => x.ok), JSON.stringify(b.checklist.filter((x: { ok: boolean }) => !x.ok)));
   assert.equal(b.fasen[3].status, 'open');
 

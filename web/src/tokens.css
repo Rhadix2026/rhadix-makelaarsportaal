@@ -357,3 +357,13 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 .melding-bron::after { content: ':'; }
 @media (max-width: 960px) { .fasebalk { grid-template-columns: 1fr 1fr; } .beslissingen { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 600px) { .beslissingen { grid-template-columns: 1fr; } .fasebalk { grid-template-columns: 1fr 1fr; gap: 8px; } .fase a { padding: 10px; } }
+
+/* ── Stap 6: concept en preview ──────────────────────────────────────────── */
+.versies { display: flex; gap: 8px; flex-wrap: wrap; }
+.versie { display: grid; gap: 2px; justify-items: start; text-align: left; font: inherit; padding: 8px 12px; border: 1px solid var(--rand2); border-radius: var(--radius); background: #fff; cursor: pointer; color: var(--tekst2); }
+.versie:hover { border-color: var(--accent); }
+.versie-actief { border-color: var(--navy); box-shadow: 0 0 0 1px var(--navy); }
+.apparaten { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.voorbeeld-kader { margin-top: 14px; padding: 12px; background: var(--achtergrond); border: 1px solid var(--rand); border-radius: var(--radius-lg); overflow: hidden; }
+.voorbeeld-kader iframe { display: block; box-shadow: 0 4px 18px rgba(0,0,0,.12); }
+.checklist li.aanbevolen .vink { background: var(--amber-licht); color: #92400e; }

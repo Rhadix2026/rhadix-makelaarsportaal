@@ -152,6 +152,37 @@ npm run gebruiker -- deactiveer --email <adres>     # sessies worden direct beë
   vrijgave vervallen; dat regelt een databasetrigger.
   Het kantoor van een project ligt vast zodra er iets is aangeleverd.
 
+## Conceptgeneratie en preview (stap 6)
+
+- **Eén actie** (`POST /api/projecten/:id/concepten`, scherm `#/projecten/:id/concept`), alleen na de
+  vrijgave en met alle verplichte controles afgerond. De generatie loopt via de wachtrij in een kindproces:
+  1. export van de vastgelegde gegevens naar het aanleverformaat (zoals bij de kwaliteitscontrole);
+  2. `controleerAanlevering()` + `naarManifest()` van de generator. De woningmap staat in de
+     studio-opslag, niet in `woningen/` van de productie-instantie;
+  3. de beeldclassificatie uit de aanlevering wordt hergebruikt, met `altUitCategorie()`;
+  4. `mp bouw <woningmap> --uit <site>`: de bestaande **automatische compositie**;
+  5. `mp kwaliteit <woningmap> --uit <site>`: het kwaliteitsrapport van **Design System 1.0**
+     (ontwerp, taal, keuring met axe, LCP, CLS en externe verzoeken).
+- **Versies:** elke generatie is een nieuwe map `projecten/<id>/concepten/v<n>/` en een rij in `concept`.
+  Een versie wordt nooit overschreven: de rol `studio_app` mag alleen de beoordeling bijwerken en
+  niets verwijderen. Runbestanden die `mp` in `.cache/` en `metingen/` van de productie-instantie
+  achterlaat, worden naar `v<n>/generator-log/` verplaatst.
+- **Preview:** `/api/voorbeeld/<token>/`, met een geheim token per versie. De pagina staat in een
+  sandbox (`allow-scripts`, anonieme herkomst, geen cookies, geen referrer, niet indexeren). Het
+  scherm toont desktop (1440), tablet (768) en mobiel (390).
+- **Beoordeling:** accepteren, of verbeterpunten per onderdeel vastleggen. Beide komen in het
+  besluitenlog; bij verbeterpunten gaat de status naar `correctie`. Daarna kan een nieuwe versie worden gemaakt.
+- **Metingen per versie:** aanlevering en import, menselijke controle (kloktijd tot de vrijgave),
+  conceptgeneratie per stap, handmatige correcties, en de totale tijd. De machinetijd wordt getoetst
+  aan de ambitie van 15 minuten.
+- **Blokkeerregels (besluit na stap 5):** de conceptgeneratie wordt alleen geblokkeerd door
+  kritische ontbrekende gegevens, onopgeloste inhoudelijke tegenstrijdigheden en ontbrekende
+  verplichte keuzes. Niet beoordeelde gegevens, terminologische afwijkingen en de fotokwaliteit zijn
+  aanbevolen punten; ze blijven zichtbaar.
+- **Financiële gegevens:** de VvE-bijdrage en servicekosten in de brochuretekst worden een feit met
+  bron, met `publiceren = false`. Ze komen niet in het manifest. De brochuretekst blijft ongewijzigd
+  (geen automatische tekstcorrectie); de makelaar beslist.
+
 ## Tests
 
 - `npm test` maakt bij elk testbestand een verse database `studio_test` in de studio-container.

@@ -16,7 +16,7 @@ export const BASIS = { adres: 'Straat en huisnummer', postcode: 'Postcode', plaa
 type Basis = keyof typeof BASIS;
 const isBasis = (s: string): s is Basis => s in BASIS;
 
-export type Kandidaat = { sleutel: string; label: string; waarde: unknown; eenheid?: string | null; bron: string; zekerheid?: string; verificatie?: string; toelichting?: string };
+export type Kandidaat = { sleutel: string; label: string; waarde: unknown; eenheid?: string | null; bron: string; zekerheid?: string; verificatie?: string; toelichting?: string; publiceren?: boolean };
 
 /** Woningtype uit de brochureomschrijving ('Maisonnette', 'Bovenwoning', …); null als het niet eenduidig is. */
 export function woningtypeUit(soort: string): string | null {
@@ -59,6 +59,31 @@ export type Conflict = { ernst: string; bronnen: string[] };
 /** 'conflict' van de generator = inhoudelijke tegenstrijdigheid; 'onduidelijk' = mogelijke terminologische afwijking. */
 export const soortConflict = (c: Conflict) => (c.ernst === 'conflict' ? 'tegenstrijdigheid' : 'terminologie');
 
+// Financiële gegevens in de lopende brochuretekst. Ze worden als feit met bron vastgelegd, maar niet
+// automatisch gepubliceerd: de makelaar bepaalt welke financiële gegevens op de website komen.
+const FINANCIEEL: [RegExp, string, string][] = [
+  [/bijdrage\s+(?:aan\s+de\s+)?vve[^€\n]{0,25}€\s?([\d.]+(?:,\d+)?)(?:\s*(?:per|p\/)\s*(maand|jaar|m|j)\b)?/i, 'vve_bijdrage', 'Bijdrage VvE'],
+  [/vve[- ]bijdrage[^€\n]{0,25}€\s?([\d.]+(?:,\d+)?)(?:\s*(?:per|p\/)\s*(maand|jaar|m|j)\b)?/i, 'vve_bijdrage', 'Bijdrage VvE'],
+  [/servicekosten[^€\n]{0,25}€\s?([\d.]+(?:,\d+)?)(?:\s*(?:per|p\/)\s*(maand|jaar|m|j)\b)?/i, 'servicekosten', 'Servicekosten'],
+];
+export function financieleKandidaten(md: string, hoofdstukken: { id: string; titel: string; paginas: number[] }[]): Kandidaat[] {
+  const uit: Kandidaat[] = [];
+  let h: { titel: string; paginas: number[] } | undefined;
+  for (const regel of md.split('\n')) {
+    const kop = regel.match(/^# hoofdstuk ([a-z0-9-]+)/);
+    if (kop) { h = hoofdstukken.find((x) => x.id === kop[1]); continue; }
+    for (const [rx, sleutel, label] of FINANCIEEL) {
+      const m = regel.match(rx);
+      if (!m || uit.some((k) => k.sleutel === `feit.${sleutel}`)) continue;
+      const per = m[2] ? ({ m: 'maand', j: 'jaar' } as Record<string, string>)[m[2].toLowerCase()] ?? m[2].toLowerCase() : null;
+      uit.push({ sleutel: `feit.${sleutel}`, label, waarde: Number(m[1].replace(/\./g, '').replace(',', '.')), eenheid: per ? `€ per ${per}` : '€',
+        bron: `brochure p. ${h?.paginas?.[0] ?? '?'} (${h?.titel ?? 'tekst'}: '${regel.replace(/^[-*\s]+/, '').trim()}')`, zekerheid: 'hoog',
+        toelichting: 'financieel gegeven; niet automatisch gepubliceerd', publiceren: false });
+    }
+  }
+  return uit;
+}
+
 const gelijk = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 async function spiegelProject(c: pg.PoolClient, project: string, sleutel: string, waarde: unknown) {
@@ -88,9 +113,9 @@ export async function vulAan(c: pg.PoolClient, gebruiker: string, project: { id:
         WHERE project_id = $1 AND sleutel = $2`, [project.id, k.sleutel, k.label, JSON.stringify(k.waarde), k.eenheid ?? null, k.bron, verwerking, gebruiker]);
       t.bijgewerkt++;
     } else {
-      await c.query(`INSERT INTO gegeven (project_id, kantoor_id, sleutel, label, waarde, eenheid, herkomst, status, verwerking_id, bron, gewijzigd_door)
-        VALUES ($1, $2, $3, $4, $5, $6, 'brochure', 'overgenomen', $7, $8, $9)`,
-        [project.id, project.kantoor_id, k.sleutel, k.label, JSON.stringify(k.waarde), k.eenheid ?? null, verwerking, k.bron, gebruiker]);
+      await c.query(`INSERT INTO gegeven (project_id, kantoor_id, sleutel, label, waarde, eenheid, herkomst, status, verwerking_id, bron, gewijzigd_door, publiceren)
+        VALUES ($1, $2, $3, $4, $5, $6, 'brochure', 'overgenomen', $7, $8, $9, $10)`,
+        [project.id, project.kantoor_id, k.sleutel, k.label, JSON.stringify(k.waarde), k.eenheid ?? null, verwerking, k.bron, gebruiker, k.publiceren ?? true]);
       t.aangevuld++;
     }
     await spiegelProject(c, project.id, k.sleutel, k.waarde);
@@ -151,11 +176,11 @@ export async function bewerkGegeven(c: pg.PoolClient, gebruiker: string, project
   } else if (h.actie === 'brochure') {
     if (!extractie) return { fout: 'geen_extractie' as const };
     if (oud?.status === 'goedgekeurd' && h.bevestigd !== true) return { fout: 'bevestiging' as const };
-    nieuw = (await c.query(`INSERT INTO gegeven (project_id, kantoor_id, sleutel, label, waarde, eenheid, herkomst, status, bron, gewijzigd_door)
-      VALUES ($1, $2, $3, $4, $5, $6, 'brochure', 'goedgekeurd', $7, $8)
+    nieuw = (await c.query(`INSERT INTO gegeven (project_id, kantoor_id, sleutel, label, waarde, eenheid, herkomst, status, bron, gewijzigd_door, publiceren)
+      VALUES ($1, $2, $3, $4, $5, $6, 'brochure', 'goedgekeurd', $7, $8, $9)
       ON CONFLICT (project_id, sleutel) DO UPDATE SET waarde = EXCLUDED.waarde, eenheid = EXCLUDED.eenheid, herkomst = 'brochure', status = 'goedgekeurd',
         bron = EXCLUDED.bron, gewijzigd_door = EXCLUDED.gewijzigd_door, gewijzigd_op = now() RETURNING *`,
-      [project.id, project.kantoor_id, sleutel, extractie.label, JSON.stringify(extractie.waarde), extractie.eenheid ?? null, extractie.bron, gebruiker])).rows[0];
+      [project.id, project.kantoor_id, sleutel, extractie.label, JSON.stringify(extractie.waarde), extractie.eenheid ?? null, extractie.bron, gebruiker, extractie.publiceren ?? true])).rows[0];
   } else if (h.actie === 'afwijzen') {
     // Gemotiveerd afwijzen: het brochuregegeven wordt niet gebruikt. Alleen voor brochuregegevens.
     if (!oud || oud.herkomst !== 'brochure') return { fout: 'onbekend' as const };

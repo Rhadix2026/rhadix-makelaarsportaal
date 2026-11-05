@@ -9,6 +9,7 @@ import { StatusPagina } from './Status.tsx';
 import { Dashboard, ProjectDetail, ProjectFormulier } from './Projecten.tsx';
 import { AanleverScherm } from './Aanlevering.tsx';
 import { BeoordelingScherm } from './Beoordeling.tsx';
+import { ConceptScherm } from './Concepten.tsx';
 
 function useHash() {
   const [hash, setHash] = useState(location.hash || '#/projecten');
@@ -30,6 +31,7 @@ function Scherm({ hash, ik }: { hash: string; ik: Ik }) {
   if (hash === '#/projecten/nieuw') return ik.platformbeheer ? <ProjectFormulier /> : <p className="melding melding-fout">Alleen voor platformbeheer.</p>;
   if ((m = hash.match(/^#\/projecten\/([0-9a-f-]{36})\/bewerken$/))) return <ProjectFormulier id={m[1]} />;
   if ((m = hash.match(/^#\/projecten\/([0-9a-f-]{36})\/aanlevering$/))) return <AanleverScherm id={m[1]} ik={ik} />;
+  if ((m = hash.match(/^#\/projecten\/([0-9a-f-]{36})\/concept$/))) return <ConceptScherm id={m[1]} ik={ik} />;
   if ((m = hash.match(/^#\/projecten\/([0-9a-f-]{36})\/beoordeling$/))) return <BeoordelingScherm id={m[1]} ik={ik} />;
   if ((m = hash.match(/^#\/projecten\/([0-9a-f-]{36})$/))) return <ProjectDetail id={m[1]} ik={ik} />;
   return <Dashboard ik={ik} />;

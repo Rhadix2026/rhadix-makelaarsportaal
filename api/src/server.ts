@@ -16,6 +16,7 @@ import { bevestigVoorstel, leesHuisstijl, logoUitBrochure, uploadLogo } from './
 import { miniatuur, opslagPad } from './opslag.ts';
 import { createReadStream } from 'node:fs';
 import { beoordeling, beslis, kwaliteitscontrole } from './controle.ts';
+import { beoordeelConcept, conceptBestand, leesConcept, lijstConcepten, magGenereren, vraagConcept } from './concepten.ts';
 import { leesProject, lijstProjecten, maakProject, STATUSSEN, telling, valideerProject, wijzigProject, WONINGTYPEN } from './projecten.ts';
 
 const STUDIO_VERSIE = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version as string;
@@ -56,6 +57,8 @@ export function bouwApp() {
     const origin = req.headers.origin;
     if (req.method !== 'GET' && origin && !toegestaneHerkomst.has(origin)) return reply.code(403).send({ fout: 'Onbekende herkomst' });
     if (req.url === '/api/inloggen') return;
+    // Preview van een concept: toegang via het geheime voorbeeldtoken in het pad (alleen lezen).
+    if (req.method === 'GET' && req.url.startsWith('/api/voorbeeld/')) return;
     const g = await sessieGebruiker(leesCookie(req.headers.cookie));
     if (!g) return reply.code(401).send({ fout: 'Niet ingelogd' });
     req.gebruiker = g;
@@ -274,6 +277,54 @@ export function bouwApp() {
       return reply.code(code).send({ fout, ...(x.open ? { open: x.open } : {}) });
     }
     return r.beoordeling;
+  });
+
+  // ── Conceptgeneratie en preview (stap 6) ───────────────────────────────
+  app.get<{ Params: { id: string } }>('/api/projecten/:id/concepten', async (req, reply) => {
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Woningproject niet gevonden' });
+    const r = await alsGebruiker(req.gebruiker, async (c) => {
+      const p = await leesProject(c, req.params.id);
+      if (!p) return null;
+      const m = await magGenereren(c, req.params.id);
+      const v = (await c.query(`SELECT id, status, volgnummer, aangevraagd_op, gestart_op, klaar_op, duur_ms, fout FROM verwerking
+        WHERE project_id = $1 AND soort = 'conceptgeneratie' ORDER BY volgnummer DESC LIMIT 1`, [req.params.id])).rows[0] ?? null;
+      return { project: p, concepten: await lijstConcepten(c, req.params.id), mag_genereren: { ok: m.ok, reden: m.reden }, generatie: v };
+    });
+    return r ?? reply.code(404).send({ fout: 'Woningproject niet gevonden' });
+  });
+
+  app.post<{ Params: { id: string } }>('/api/projecten/:id/concepten', { preHandler: alleenPlatform }, async (req, reply) => {
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Woningproject niet gevonden' });
+    const r = await alsGebruiker(req.gebruiker, (c) => vraagConcept(c, req.gebruiker, req.params.id));
+    if ('fout' in r) return reply.code(409).send({ fout: r.reden });
+    void wekVerwerker();
+    return reply.code(202).send(r.verwerking);
+  });
+
+  app.get<{ Params: { id: string } }>('/api/concepten/:id', async (req, reply) => {
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Concept niet gevonden' });
+    const k = await alsGebruiker(req.gebruiker, (c) => leesConcept(c, req.params.id));
+    return k ?? reply.code(404).send({ fout: 'Concept niet gevonden' });
+  });
+
+  app.put<{ Params: { id: string }; Body: { besluit?: string; motivering?: string; verbeterpunten?: unknown } }>('/api/concepten/:id/beoordeling', { preHandler: alleenPlatform }, async (req, reply) => {
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Concept niet gevonden' });
+    const r = await alsGebruiker(req.gebruiker, (c) => beoordeelConcept(c, req.gebruiker, req.params.id, req.body ?? {}));
+    if ('fout' in r) return reply.code(r.fout === 'onbekend' ? 404 : 400).send({ fout: ({ onbekend: 'Concept niet gevonden', punten: 'Leg minstens één verbeterpunt vast', besluit: 'Kies accepteren of verbeterpunten' } as Record<string, string>)[r.fout as string] });
+    return r.concept;
+  });
+
+  // Lokale preview: de gegenereerde site, in een afgeschermde omgeving (sandbox, geen cookies, geen referrer, niet indexeren).
+  app.get<{ Params: { token: string; '*': string } }>('/api/voorbeeld/:token/*', async (req, reply) => {
+    if (!/^[A-Za-z0-9_-]{40,64}$/.test(req.params.token)) return reply.code(404).send({ fout: 'Niet gevonden' });
+    const k = (await pool.query('SELECT map FROM concept WHERE voorbeeld_token = $1', [req.params.token])).rows[0];
+    const b = k && conceptBestand(k.map, req.params['*']);
+    if (!b) return reply.code(404).send({ fout: 'Niet gevonden' });
+    reply.header('content-security-policy', "sandbox allow-scripts; frame-ancestors 'self'").header('referrer-policy', 'no-referrer')
+      .header('x-robots-tag', 'noindex, nofollow').header('x-content-type-options', 'nosniff').header('cache-control', 'private, max-age=300');
+    // De sandbox geeft de preview een anonieme herkomst; lettertypes worden altijd met CORS opgehaald.
+    if (b.type === 'font/woff2') reply.header('access-control-allow-origin', '*');
+    return reply.type(b.type).send(createReadStream(b.pad));
   });
 
   // ── Kantoorhuisstijl ────────────────────────────────────────────────────

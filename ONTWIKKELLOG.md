@@ -97,3 +97,24 @@ Uitgevoerd in een tijdelijke demo-omgeving (`studio_demo`, 5481/8481), met de or
 | Menselijke handelingen tot vrijgave | 16: bulkgoedkeuring (15 gegevens), 2 besluiten over tegenstrijdigheden, 5 gegevens met lagere zekerheid afzonderlijk, de kantoorgegevens aanvullen uit de brochure, rechten, profiel, websiteadres (tijdelijk), openingsbeeld, fotokwaliteit accepteren, de kwaliteitscontrole opnieuw uitvoeren, de vrijgave |
 | Na de beslissingen | 0 blokkades. 4 aandachtspunten: het VvE-bedrag en 3 lange zinnen. 5 informatief. Vrijgave geslaagd; status `klaar_voor_productie`; alle 4 fasen gereed; 28 besluiten in het log |
 | Borging | Een vrijgave met een verouderde kwaliteitscontrole wordt geweigerd (409). Een wijziging na de vrijgave laat de status terugvallen naar `aanlevering_incompleet`. Bij een nieuwe import blijven goedgekeurde, gecorrigeerde en afgewezen gegevens staan |
+
+## Stap 6: conceptgeneratie en preview (05-11-2026)
+
+| Meting | Waarde |
+|---|---|
+| Hergebruik generator | `controleerAanlevering()`, `naarManifest()`, het manifestschema, `altUitCategorie()`, `mp bouw` (automatische compositie, renderen, QA) en `mp kwaliteit` (DS-3: ontwerp, taal, keuring). Geen nieuwe generator, compositieregels of bouwblokken |
+| Nieuw | Wachtrijsoort `conceptgeneratie`, tabel `concept` (onveranderlijke versies; alleen de beoordeling is bij te werken), afgeschermde preview met token, het scherm "Concept en preview", metingen per versie; besluiten na stap 5 (verplicht/aanbevolen, financiële feiten met `publiceren = false`); migratie `007_concepten.sql` |
+| Iteraties | (1) Een makelaar kon een concept niet lezen: een gewone join op `gebruiker` viel weg door RLS; nu een LEFT JOIN (ook in de lijst met aanleveringen). (2) Lettertypes in de sandbox-preview vroegen CORS: alleen voor `.woff2` toegestaan. (3) De runbestanden van `mp` in de productie-instantie (`.cache/`, `metingen/`) bevatten woninggegevens: ze worden nu naar de conceptmap verplaatst. (4) Tests aangepast: de VvE-bijdrage is een extra (23e) gegeven en geldt als informatie |
+| Tests | 67 (+1: de volledige keten met twee echte builds, de preview, verbeterpunten, v2 zonder v1 te overschrijven en de rechten). 81 generatortests groen; productie-instantie ongewijzigd |
+
+### Praktijktest Markt 27 (demo-omgeving, classificatie aan, daarna verwijderd)
+
+| Meting | Waarde |
+|---|---|
+| Aanlevering en import | 21 s (inclusief de beeldclassificatie) |
+| Menselijke controle | 11 handelingen: bulkgoedkeuring, 2 besluiten over tegenstrijdigheden, kantoorgegevens en logo uit de brochure, rechten, profiel, conceptadres, openingsbeeld, kwaliteitscontrole, vrijgave. Geautomatiseerd in ±1 s; in de praktijk bepaald door het lezen en beslissen |
+| Conceptgeneratie | 26,7 s: export en manifest 0,2 s, classificatie hergebruikt (0 s), `mp bouw` 6,6 s, `mp kwaliteit` 19,7 s |
+| Handmatige correcties | 0 gegevens gecorrigeerd, 0 afgewezen, 0 in de compositie; 2 besluiten over tegenstrijdigheden |
+| Tot het eerste concept (machine) | **47,9 s** (ambitie ≤ 15 min: gehaald) |
+| Kwaliteitsrapport v1 | 0 blokkerend; axe 0 bevindingen op 390 en 1280 px; LCP mobiel 108 ms; CLS 0; geen externe verzoeken; 14 waarschuwingen (o.a. 3 onzekere fotocategorieën, 4 onbevestigde feiten, ontbrekende openingstekst, introductie en slottekst, tekstbreedte, 3 lange zinnen) |
+| Pagina | Automatische compositie in 14 delen, met ruimtesecties (Entree, Wonen, Koken, Slapen en werken, Sanitair, Buiten, Omgeving), plattegronden, kenmerken en contact; profiel stads, DS 1.0 |

@@ -98,7 +98,7 @@ export type GegevenRegel = Aanlevering['gegevens'][number];
 export type Beoordeling = {
   project: Project; vingerafdruk: string; klaar: boolean;
   fasen: { nr: number; naam: string; status: 'gereed' | 'open' | 'wacht'; open: number }[];
-  checklist: { fase: number; code: string; titel: string; ok: boolean; actie: string | null }[];
+  checklist: { fase: number; code: string; titel: string; ok: boolean; verplicht: boolean; actie: string | null }[];
   broncontrole: { telling: Record<'totaal' | 'overgenomen' | 'gecontroleerd' | 'gecorrigeerd' | 'afgewezen' | 'tegenstrijdig' | 'opgelost' | 'ontbrekend', number>;
     te_beoordelen: GegevenRegel[]; vastgesteld: GegevenRegel[] };
   kwaliteit: null | { id: string; volgnummer: number; klaar_op: string; duur_ms: number; generator_commit: string; actueel: boolean;
@@ -112,3 +112,27 @@ export type Beoordeling = {
   vrijgave: { vrijgegeven: boolean; actueel: boolean; op?: string; motivering?: string | null; vervallen_op?: string; vervallen_door?: string; betekenis?: string };
   besluiten: { id: number; onderwerp: string; handeling: string; waarde: unknown; motivering: string | null; op: string; door: string | null }[];
 };
+
+export type ConceptKort = {
+  id: string; versie: number; status: 'te_beoordelen' | 'geaccepteerd' | 'verbeterpunten'; ontwerpsysteem: string; profiel: string; generator_commit: string;
+  aangemaakt_op: string; aangemaakt_door: string | null; beoordeeld_op: string | null; beoordeeld_door: string | null; motivering: string | null;
+  verbeterpunten: { onderdeel: string; tekst: string; op: string }[]; metingen: Metingen; voorbeeld_token: string; kwaliteit_kort: { blokkerend: number; waarschuwingen: number };
+};
+export type Metingen = {
+  aanlevering_import: { import_ms: number | null; upload_tot_import_ms: number | null };
+  menselijke_controle: { doorloop_ms: number | null; besluiten: number; toelichting: string };
+  conceptgeneratie: { totaal_ms: number; stappen: Record<string, number>; kwaliteitscontroles_ms: number };
+  correcties: { gegevens_gecorrigeerd: number; gegevens_afgewezen: number; tegenstrijdigheden_besloten: number; compositie: number };
+  totaal: { machine_ms: number; ambitie_ms: number; binnen_ambitie: boolean; toelichting_machine: string; doorloop_ms: number | null; toelichting_doorloop: string; eerste_concept: boolean };
+};
+export type Meetwaarde = { criterium: string; waarde: unknown; norm: string; ok: boolean };
+export type Concept = ConceptKort & {
+  map: string; aangemaakt_door_naam: string | null; beoordeeld_door_naam: string | null; build_vingerafdruk: string; invoer_vingerafdruk: string; bouw: { vingerafdruk: string; ontwerpsysteem: { versie: string; status: string }; profiel: string; lettertypepaar: string | null; onderdelen: string[];
+    rapport: { modus: string; totaal_ms: number; correcties: number; besluiten: { regel: string; tekst: string }[]; regels: { code: string; t: string }[]; waarschuwingen: string[];
+      qa: { feiten?: { getoetst: number; fouten: string[]; meldingen: string[] }; site?: { verwijzingen: number; fouten: string[] }; bijna_dubbel?: string[];
+        presentatie?: { score: number; blokkerend?: { controle: string; melding: string }[]; aandacht?: { controle: string; melding: string }[] } } } };
+  kwaliteit: null | { blokkerend: { controle: string; melding: string }[]; meetwaarden: Meetwaarde[]; waarschuwingen: { controle: string; melding: string }[];
+    publiceerbaar: boolean; redenen: string[]; menselijk: { stappen: { stap: string; uitkomst: string }[] } };
+};
+export type ConceptenOverzicht = { project: Project; concepten: ConceptKort[]; mag_genereren: { ok: boolean; reden: string | null };
+  generatie: null | { id: string; status: string; aangevraagd_op: string; gestart_op: string | null; klaar_op: string | null; duur_ms: number | null; fout: string | null } };
