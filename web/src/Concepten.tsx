@@ -6,6 +6,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { api, ApiFout, type Concept, type ConceptenOverzicht, type Ik, type Meetwaarde } from './api.ts';
 import { Badge, Kaart, type Toon } from './onderdelen/basis.tsx';
 import { Fasebalk, useBeoordeling } from './Beoordeling.tsx';
+import { Meldingenoverzicht } from './onderdelen/Meldingen.tsx';
+import { useActiviteit } from './onderdelen/activiteit.ts';
 
 const APPARATEN = [{ naam: 'Desktop', breedte: 1440, hoogte: 900 }, { naam: 'Tablet', breedte: 768, hoogte: 1024 }, { naam: 'Mobiel', breedte: 390, hoogte: 844 }];
 const STATUS: Record<string, [Toon, string]> = { te_beoordelen: ['let-op', 'te beoordelen'], geaccepteerd: ['goed', 'geaccepteerd'], verbeterpunten: ['fout', 'verbeterpunten'] };
@@ -37,16 +39,6 @@ function Voorbeeld({ token, breedte, hoogte }: { token: string; breedte: number;
   );
 }
 
-function Lijst({ titel, items, toon, leeg = 'Geen.' }: { titel: string; items: { bron?: string; tekst: ReactNode }[]; toon: 'blokkerend' | 'aandacht' | 'info'; leeg?: string }) {
-  return (
-    <section className={`meldgroep meldgroep-${toon}`}>
-      <h3>{titel} <span className="meldgroep-aantal">{items.length}</span></h3>
-      {items.length ? <ul className="meldingen">{items.map((m, i) => <li key={i} className={`m-${toon}`}>{m.bron && <span className="melding-bron">{m.bron}</span>} {m.tekst}</li>)}</ul>
-        : <p className="meldgroep-leeg">{leeg}</p>}
-    </section>
-  );
-}
-
 function Meetwaarden({ rijen }: { rijen: Meetwaarde[] }) {
   if (!rijen.length) return <p className="bron">Geen metingen.</p>;
   return (
@@ -57,33 +49,33 @@ function Meetwaarden({ rijen }: { rijen: Meetwaarde[] }) {
   );
 }
 
-/** Het kwaliteitsrapport (mp kwaliteit) en de QA van de build (mp bouw), ingedeeld zoals gevraagd. */
+/** Het kwaliteitsrapport (mp kwaliteit): samenvatting en meldingen per categorie; meetwaarden en techniek uitklapbaar. */
 function Kwaliteit({ k }: { k: Concept }) {
   const q = k.kwaliteit, qa = k.bouw.rapport.qa;
   const mw = q?.meetwaarden ?? [];
   const toegankelijk = mw.filter((m) => /toegankelijkheid|contrast|aanraakdoel|focus|alt/i.test(m.criterium));
   const laadtijd = mw.filter((m) => /LCP|CLS|externe verzoeken|gewicht|bytes|laad/i.test(m.criterium));
   const overig = mw.filter((m) => !toegankelijk.includes(m) && !laadtijd.includes(m));
-  const ontbrekend = [
-    ...k.bouw.rapport.waarschuwingen.map((w) => ({ bron: 'compositie', tekst: w })),
-    ...(qa.presentatie?.aandacht ?? []).filter((a) => /ontbre|geen |mist/i.test(a.melding)).map((a) => ({ bron: a.controle, tekst: a.melding })),
-  ];
   const techniek: Meetwaarde[] = [
     { criterium: 'lokale verwijzingen (site)', waarde: `${qa.site?.verwijzingen ?? '—'} gecontroleerd, ${qa.site?.fouten.length ?? 0} fout`, norm: '0 fouten', ok: !(qa.site?.fouten.length) },
     { criterium: 'feitencontrole (maten in tekst)', waarde: `${qa.feiten?.getoetst ?? 0} getoetst, ${qa.feiten?.fouten.length ?? 0} fout`, norm: '0 fouten', ok: !(qa.feiten?.fouten.length) },
     { criterium: 'bijna-dubbele foto\'s op de pagina', waarde: qa.bijna_dubbel?.length ?? 0, norm: '0', ok: !(qa.bijna_dubbel?.length) },
   ];
+  const buiten = [...mw, ...techniek].filter((m) => !m.ok).length;
+  const kern = (rx: RegExp) => mw.find((m) => rx.test(m.criterium));
   return (
     <>
-      <p className="bron" style={{ marginTop: 0 }}>Kwaliteitscontrole van Design System 1.0 (<span className="mono">mp kwaliteit</span>): ontwerpmetingen op 390, 768 en 1440 px, taalcontrole en de keuring (axe-toegankelijkheid, LCP, CLS, externe verzoeken).
-        {q && <> Publiceerbaar volgens het rapport: <strong>{q.publiceerbaar ? 'ja' : 'nee'}</strong>{q.redenen.length ? ` (${q.redenen.join('; ')})` : ''}. Dit is een concept: publicatie kent afzonderlijke controles.</>}</p>
-      {!q ? <p className="melding melding-fout">Het kwaliteitsrapport ontbreekt voor deze versie.</p> : <>
-        <Lijst titel="Blokkerende fouten" toon="blokkerend" items={q.blokkerend.map((b) => ({ bron: b.controle, tekst: b.melding }))} />
-        <Lijst titel="Waarschuwingen" toon="aandacht" items={q.waarschuwingen.map((b) => ({ bron: b.controle, tekst: b.melding }))} />
-        <h3 className="tussenkop">Toegankelijkheid</h3><Meetwaarden rijen={toegankelijk} />
-        <h3 className="tussenkop">Laadtijd en technische kwaliteit</h3><Meetwaarden rijen={[...laadtijd, ...techniek]} />
-        <Lijst titel="Ontbrekende of zwakke onderdelen" toon="info" items={ontbrekend} leeg="Niets gemeld." />
-        <details className="uitklap"><summary>Overige meetwaarden ({overig.length}): ontwerp en taal</summary><Meetwaarden rijen={overig} /></details>
+      <p className="bron" style={{ marginTop: 0 }}>Kwaliteitscontrole van Design System 1.0 op het gegenereerde concept. Het concept bestaat al: meldingen gelden voor de publicatie of zijn informatief.
+        {q && !q.publiceerbaar && <> Publicatie vraagt nog afzonderlijke controles{q.redenen.length ? ` (${q.redenen.join('; ')})` : ''}.</>}</p>
+      {!q || !k.indeling ? <p className="melding melding-fout">Het kwaliteitsrapport ontbreekt voor deze versie.</p> : <>
+        <Meldingenoverzicht indeling={k.indeling} conceptgeneratie={false} />
+        <p className="bron">Techniek: toegankelijkheid {toegankelijk.every((m) => m.ok) ? 'zonder bevindingen' : 'met bevindingen'} · LCP {String(kern(/LCP/)?.waarde ?? '—')} · CLS {String(kern(/CLS/)?.waarde ?? '—')}
+          {' '}· externe verzoeken {String(kern(/externe/)?.waarde ?? '—')} · {buiten} meetwaarde{buiten === 1 ? '' : 'n'} buiten norm.</p>
+        <details className="uitklap"><summary>Technische meetwaarden ({mw.length + techniek.length}): toegankelijkheid, laadtijd, techniek, ontwerp en taal</summary>
+          <h3 className="tussenkop">Toegankelijkheid</h3><Meetwaarden rijen={toegankelijk} />
+          <h3 className="tussenkop">Laadtijd en technische kwaliteit</h3><Meetwaarden rijen={[...laadtijd, ...techniek]} />
+          <h3 className="tussenkop">Ontwerp en taal</h3><Meetwaarden rijen={overig} />
+        </details>
       </>}
       <details className="uitklap"><summary>Opbouw van de pagina (automatische compositie, {k.bouw.onderdelen.length} delen)</summary>
         <div className="chips" style={{ margin: '8px 0' }}>{k.bouw.onderdelen.map((o, i) => <span key={i} className="chip">{o}</span>)}</div>
@@ -93,26 +85,63 @@ function Kwaliteit({ k }: { k: Concept }) {
   );
 }
 
+/** Waarop het concept rust: bronovername en open onzekerheden (vastgelegd bij het genereren). */
+function Uitgangspunten({ k }: { k: Concept }) {
+  const u = k.uitgangspunten;
+  if (!u) return <p className="bron" style={{ marginTop: 0 }}>Niet vastgelegd: deze versie is gemaakt vóór de registratie van uitgangspunten. De gegevens van toen staan in de aanlevering van de versie.</p>;
+  return (
+    <>
+      <p className="bron" style={{ marginTop: 0 }}>{u.bronovername
+        ? <>Bron overgenomen als uitgangspunt op {datum(u.bronovername.op)}{u.bronovername.door ? ` door ${u.bronovername.door}` : ''} (brochure-PDF, import {u.bronovername.volgnummer}, sha256 {(u.bronovername.sha256 ?? '').slice(0, 12)}). Geen individuele verificatie.</>
+        : 'Geen bronovername: de gegevens zijn afzonderlijk beoordeeld.'} {u.gecontroleerd} gegevens afzonderlijk gecontroleerd of gecorrigeerd, {u.onbevestigd.length} onbevestigd.</p>
+      {u.onzekerheden.length > 0 ? <div className="tabel-schuif"><table className="lijst">
+        <thead><tr><th>Gegeven</th><th>Gebruikte waarde</th><th>Onzekerheid</th><th>Bronnen</th></tr></thead>
+        <tbody>{u.onzekerheden.map((o) => (
+          <tr key={o.sleutel}><td>{o.gegeven}</td><td>{o.gebruikte_waarde ?? '—'} <Badge toon="let-op">{o.verificatie}</Badge></td>
+            <td>{o.soort === 'tegenstrijdigheid' ? 'inhoudelijke tegenstrijdigheid' : 'mogelijke terminologische afwijking'}; vóór publicatie besluiten</td><td className="bron">{o.bronnen.join(', ')}</td></tr>))}</tbody>
+      </table></div> : <p className="bron">Geen open tegenstrijdigheden of terminologische afwijkingen.</p>}
+      {u.ontbrekend.length > 0 && <p className="bron">Ontbreekt (niet aangevuld): {u.ontbrekend.join(', ')}.</p>}
+    </>
+  );
+}
+
+const Tegel = ({ getal, label, sub, toon }: { getal: string; label: string; sub: ReactNode; toon?: 'goed' | 'let-op' }) => (
+  <div className="tegel"><span className={`fk-getal${toon ? ` fk-${toon}` : ''}`}>{getal}</span><span className="fk-label">{label}</span><span className="fk-sub">{sub}</span></div>
+);
+
+/**
+ * Metingen: machinetijd, actieve gebruikerstijd en kalenderdoorlooptijd afzonderlijk. Versies van
+ * vóór de tijdregistratie tonen hun opgeslagen waarden ongewijzigd, met een duidelijke markering.
+ */
 function Metingen({ k }: { k: Concept }) {
   const m = k.metingen;
+  const nieuw = m.versie === 2 && m.actief && m.kalender;
+  const a = nieuw ? m.actief!.totaal : k.tijd_achteraf;
+  const kalender = nieuw ? m.kalender!.ms : m.totaal.doorloop_ms ?? null;
   return (
     <>
       <div className="tegels">
-        <div className="tegel"><span className="fk-getal">{duur(m.aanlevering_import.import_ms)}</span><span className="fk-label">aanlevering en import</span><span className="fk-sub">brochure-import (incl. beeldclassificatie)</span></div>
-        <div className="tegel"><span className="fk-getal">{duur(m.menselijke_controle.doorloop_ms)}</span><span className="fk-label">menselijke controle</span><span className="fk-sub">{m.menselijke_controle.besluiten} besluiten; kloktijd tot de vrijgave</span></div>
-        <div className="tegel"><span className="fk-getal">{duur(m.conceptgeneratie.totaal_ms)}</span><span className="fk-label">conceptgeneratie</span><span className="fk-sub">bouw {duur(m.conceptgeneratie.stappen.bouw)}, kwaliteit {duur(m.conceptgeneratie.stappen.kwaliteit)}</span></div>
-        <div className="tegel"><span className="fk-getal">{m.correcties.gegevens_gecorrigeerd + m.correcties.gegevens_afgewezen + m.correcties.compositie}</span><span className="fk-label">handmatige correcties</span>
-          <span className="fk-sub">{m.correcties.gegevens_gecorrigeerd} gecorrigeerd, {m.correcties.gegevens_afgewezen} afgewezen, {m.correcties.compositie} in de compositie; {m.correcties.tegenstrijdigheden_besloten} besluit(en) over tegenstrijdigheden</span></div>
-        <div className="tegel"><span className={`fk-getal ${m.totaal.binnen_ambitie ? 'fk-goed' : 'fk-let-op'}`}>{duur(m.totaal.machine_ms)}</span><span className="fk-label">tot het eerste concept (machine)</span>
-          <span className="fk-sub">ambitie ≤ {duur(m.totaal.ambitie_ms)}: {m.totaal.binnen_ambitie ? 'gehaald' : 'niet gehaald'}</span></div>
-        <div className="tegel"><span className="fk-getal">{duur(m.totaal.doorloop_ms)}</span><span className="fk-label">totale doorlooptijd</span><span className="fk-sub">eerste upload tot dit concept, inclusief menselijke controle</span></div>
+        <Tegel getal={duur(m.totaal.machine_ms)} label="machinetijd" toon={m.totaal.machine_ms <= m.totaal.ambitie_ms ? 'goed' : 'let-op'}
+          sub={<>import {duur(m.aanlevering_import.import_ms)}, kwaliteitscontroles {duur(m.conceptgeneratie.kwaliteitscontroles_ms)}, generatie {duur(m.conceptgeneratie.totaal_ms)}</>} />
+        <Tegel getal={a ? duur(a.ms) : '—'} label={`actieve gebruikerstijd${a && !a.betrouwbaar ? ' (indicatie)' : ''}`} toon={a?.betrouwbaar ? undefined : 'let-op'}
+          sub={a ? <>{a.betrouwbaar ? 'geregistreerd' : 'niet betrouwbaar vast te stellen'}: {a.toelichting}{'afgeleid' in a ? ` (${(a as { afgeleid: string }).afgeleid})` : ''}</> : 'niet geregistreerd'} />
+        <Tegel getal={duur(kalender)} label="kalenderdoorlooptijd" sub="eerste upload tot dit concept, inclusief pauzes en stilstand; geen maat voor de inzet" />
+        <Tegel getal={String(m.correcties.gegevens_gecorrigeerd + m.correcties.gegevens_afgewezen + m.correcties.compositie)} label="handmatige correcties"
+          sub={<>{m.correcties.gegevens_gecorrigeerd} gecorrigeerd, {m.correcties.gegevens_afgewezen} afgewezen, {m.correcties.compositie} in de compositie; {m.correcties.tegenstrijdigheden_besloten} besluit(en) over tegenstrijdigheden</>} />
+        <Tegel getal={m.totaal.machine_en_actief_ms != null ? duur(m.totaal.machine_en_actief_ms) : '—'} label="tot het eerste concept (machine + actief)"
+          toon={m.totaal.binnen_ambitie === true ? 'goed' : m.totaal.binnen_ambitie === false ? 'let-op' : undefined}
+          sub={m.totaal.binnen_ambitie == null || !nieuw ? `ambitie ≤ ${duur(m.totaal.ambitie_ms)}: niet vast te stellen (actieve tijd niet betrouwbaar geregistreerd)` : `ambitie ≤ ${duur(m.totaal.ambitie_ms)}: ${m.totaal.binnen_ambitie ? 'gehaald' : 'niet gehaald'}`} />
       </div>
-      <p className="bron">{m.totaal.toelichting_machine}. Stappen van de generatie: {Object.entries(m.conceptgeneratie.stappen).map(([s, ms]) => `${s} ${duur(ms)}`).join(', ')}.</p>
+      {!nieuw && m.menselijke_controle && <p className="melding melding-let-op">Deze versie is gemaakt vóór de tijdregistratie. Opgeslagen als "menselijke controle": {duur(m.menselijke_controle.doorloop_ms)}.
+        Dat is de kloktijd van de import tot de vrijgave, inclusief stilstand, en géén actieve tijd. De opgeslagen waarden zijn niet aangepast.</p>}
+      <p className="bron">Stappen van de generatie: {Object.entries(m.conceptgeneratie.stappen).map(([st, ms]) => `${st} ${duur(ms)}`).join(', ')}.
+        {a && <> Actieve tijd: {a.interacties} interactiemomenten en {a.handelingen} handelingen, {a.sessies} sessie(s), {a.pauzes} pauze(s) langer dan {duur(a.grens_ms)} niet meegeteld.</>}</p>
     </>
   );
 }
 
 export function ConceptScherm({ id, ik, versie }: { id: string; ik: Ik; versie?: number }) {
+  useActiviteit(id, 'concept');
   const [d, setD] = useState<ConceptenOverzicht | null>(null);
   const [k, setK] = useState<Concept | null>(null);
   const [kies, setKies] = useState<string | null>(null);
@@ -239,6 +268,7 @@ export function ConceptScherm({ id, ik, versie }: { id: string; ik: Ik; versie?:
           </section>
         </div>}
 
+        {k && <section className="kaart"><h2>Uitgangspunten van v{k.versie}</h2><Uitgangspunten k={k} /></section>}
         {k && <section className="kaart"><h2>Kwaliteitsrapport v{k.versie}</h2><Kwaliteit k={k} /></section>}
         {k && <section className="kaart"><h2>Metingen</h2><Metingen k={k} /></section>}
       </>}

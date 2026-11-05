@@ -277,7 +277,7 @@ export async function overzicht(c: pg.PoolClient, projectId: string) {
     project, kantoor, bestanden, verwerkingen, gegevens, teksten, aanleveringen, brochure_logo: brochureLogo, fotokwaliteit: foto, makelaar,
     meldingen: meldingen({ gegevens, project, imp, foto, makelaar }),
     import: imp && {
-      id: imp.id, volgnummer: imp.volgnummer, klaar_op: imp.klaar_op, duur_ms: imp.duur_ms, stappen: imp.stappen, generator_commit: imp.generator_commit,
+      id: imp.id, volgnummer: imp.volgnummer, bron: imp.rapport.bron ?? null, sha256: imp.rapport.sha256 ?? null, klaar_op: imp.klaar_op, duur_ms: imp.duur_ms, stappen: imp.stappen, generator_commit: imp.generator_commit,
       paginas: imp.rapport.paginas, telling: imp.rapport.telling, hoofdstukken: imp.rapport.hoofdstukken, ontbreekt: imp.rapport.ontbreekt,
       conflicten: imp.rapport.conflicten, open_punten: imp.rapport.open_punten, uitgesloten: imp.rapport.uitgesloten, meldingen: imp.rapport.meldingen,
       makelaar: imp.rapport.gegevens.makelaar ?? null, profiel: imp.rapport.gegevens.profiel ?? null, huisstijl: imp.rapport.gegevens.huisstijl ?? null,

@@ -146,6 +146,13 @@ npm run gebruiker -- deactiveer --email <adres>     # sessies worden direct beë
   concept.
 - **Besluitenlog** (tabel `besluit`): wie, wanneer, wat en waarom, voor elke menselijke
   beslissing. Het log wordt alleen aangevuld; de rol `studio_app` mag niet wijzigen of verwijderen.
+- **Snelle beoordeling** (`POST /api/projecten/:id/snelle-beoordeling`): met de expliciete
+  verklaring "Neem de aangeleverde brochuregegevens en overige broninformatie over als uitgangspunt
+  voor het eerste concept" in één handeling: bronovername, de verplichte keuzes (voorstellen van de
+  import als standaard), de kwaliteitscontrole en de vrijgave. Elke stap is een eigen besluit.
+  De bronovername legt wie, wanneer en de bronversie (import, sha256) vast en geldt alleen voor die
+  bronversie. **Overnemen is geen verificatie:** de gegevens blijven `overgenomen` en gaan als
+  onbevestigd mee. De uitgebreide beoordeling blijft beschikbaar.
 - **Vrijgave:** alleen als alle verplichte controles zijn afgerond. De status wordt
   `klaar_voor_productie`: gereed voor een eerste concept, **geen publicatie**. Er wordt niets
   gegenereerd. Elke latere wijziging van gegevens, bestanden of projectbeslissingen laat de
@@ -172,13 +179,28 @@ npm run gebruiker -- deactiveer --email <adres>     # sessies worden direct beë
   scherm toont desktop (1440), tablet (768) en mobiel (390).
 - **Beoordeling:** accepteren, of verbeterpunten per onderdeel vastleggen. Beide komen in het
   besluitenlog; bij verbeterpunten gaat de status naar `correctie`. Daarna kan een nieuwe versie worden gemaakt.
-- **Metingen per versie:** aanlevering en import, menselijke controle (kloktijd tot de vrijgave),
-  conceptgeneratie per stap, handmatige correcties, en de totale tijd. De machinetijd wordt getoetst
-  aan de ambitie van 15 minuten.
-- **Blokkeerregels (besluit na stap 5):** de conceptgeneratie wordt alleen geblokkeerd door
-  kritische ontbrekende gegevens, onopgeloste inhoudelijke tegenstrijdigheden en ontbrekende
-  verplichte keuzes. Niet beoordeelde gegevens, terminologische afwijkingen en de fotokwaliteit zijn
-  aanbevolen punten; ze blijven zichtbaar.
+- **Metingen per versie** (`api/src/tijd.ts`), afzonderlijk:
+  - **machinetijd:** import, kwaliteitscontroles en conceptgeneratie per stap;
+  - **actieve gebruikerstijd:** uit interactiemomenten (tabel `activiteit`, hoogstens één per 30 s
+    per scherm, alleen bij een zichtbaar venster) plus uploads, aanvragen en besluiten. Per gebruiker
+    tellen alleen tussenpozen tot de inactiviteitsgrens (`STUDIO_INACTIVITEIT_MIN`, standaard 5).
+    Betrouwbaar alleen als de interacties vanaf de eerste handeling zijn geregistreerd; anders als
+    indicatie (ondergrens) gemarkeerd;
+  - **kalenderdoorlooptijd:** eerste upload tot het concept, inclusief stilstand.
+  De ambitie van 15 minuten wordt getoetst aan machine + actief, alleen als de actieve tijd
+  betrouwbaar is. Versies van vóór de tijdregistratie houden hun opgeslagen metingen; het scherm
+  markeert ze en toont de actieve tijd als achteraf afgeleide indicatie (niet opgeslagen).
+- **Uitgangspunten per versie** (`concept.uitgangspunten`): de bronovername (wie, wanneer, welke
+  bronversie) en de open onzekerheden met de gebruikte waarde, vastgelegd bij het genereren.
+- **Kwaliteitsmeldingen:** per categorie (fotografie, inhoud en feiten, tekstkwaliteit, vormgeving en
+  techniek), eerst een samenvatting met aantallen en prioriteit; per melding of actie nodig is voor de
+  conceptgeneratie, de publicatie of geen van beide. Technische details zijn uitklapbaar
+  (`api/src/indeling.ts`; alleen presentatie, de rapporten blijven ongewijzigd).
+- **Blokkeerregels:** de conceptgeneratie wordt alleen geblokkeerd door kritische ontbrekende gegevens,
+  ontbrekende verplichte keuzes, een ontbrekende bronovername of beoordeling, en blokkades in de
+  kwaliteitscontrole. Inhoudelijke tegenstrijdigheden, terminologische afwijkingen, niet afzonderlijk
+  gecontroleerde gegevens en de fotokwaliteit blokkeren het interne concept niet: de vastgelegde
+  waarde gaat als onbevestigd mee en blijft zichtbaar. Vóór publicatie zijn ze verplicht.
 - **Financiële gegevens:** de VvE-bijdrage en servicekosten in de brochuretekst worden een feit met
   bron, met `publiceren = false`. Ze komen niet in het manifest. De brochuretekst blijft ongewijzigd
   (geen automatische tekstcorrectie); de makelaar beslist.

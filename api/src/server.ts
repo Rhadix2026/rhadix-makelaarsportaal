@@ -15,7 +15,8 @@ import { bewerkGegeven } from './gegevens.ts';
 import { bevestigVoorstel, leesHuisstijl, logoUitBrochure, uploadLogo } from './huisstijl.ts';
 import { miniatuur, opslagPad } from './opslag.ts';
 import { createReadStream } from 'node:fs';
-import { beoordeling, beslis, kwaliteitscontrole } from './controle.ts';
+import { beoordeling, beslis, kwaliteitscontrole, snelleBeoordeling } from './controle.ts';
+import { registreerActiviteit } from './tijd.ts';
 import { beoordeelConcept, conceptBestand, leesConcept, lijstConcepten, magGenereren, vraagConcept } from './concepten.ts';
 import { leesProject, lijstProjecten, maakProject, STATUSSEN, telling, valideerProject, wijzigProject, WONINGTYPEN } from './projecten.ts';
 
@@ -277,6 +278,22 @@ export function bouwApp() {
       return reply.code(code).send({ fout, ...(x.open ? { open: x.open } : {}) });
     }
     return r.beoordeling;
+  });
+
+  // Snelle beoordeling: bron overnemen als uitgangspunt, verplichte keuzes, kwaliteitscontrole en vrijgave in één handeling.
+  app.post<{ Params: { id: string }; Body: Record<string, unknown> }>('/api/projecten/:id/snelle-beoordeling', { preHandler: alleenPlatform }, async (req, reply) => {
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Woningproject niet gevonden' });
+    const r = await alsGebruiker(req.gebruiker, (c) => snelleBeoordeling(c, req.gebruiker, req.params.id, req.body ?? {}));
+    if ('fout' in r) return reply.code(r.fout === 'onbekend' ? 404 : 400).send({ fout: r.fout === 'onbekend' ? 'Woningproject niet gevonden' : r.melding });
+    return r;
+  });
+
+  // Interactiemoment voor de actieve gebruikerstijd (gedempt; geen inhoud, alleen tijdstip en scherm).
+  app.post<{ Params: { id: string }; Body: { scherm?: string } }>('/api/projecten/:id/activiteit', async (req, reply) => {
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Woningproject niet gevonden' });
+    const r = await alsGebruiker(req.gebruiker, (c) => registreerActiviteit(c, req.gebruiker, req.params.id, String(req.body?.scherm ?? '')));
+    if ('fout' in r) return reply.code(r.fout === 'onbekend' ? 404 : 400).send({ fout: r.fout === 'onbekend' ? 'Woningproject niet gevonden' : 'Onbekend scherm' });
+    return reply.code(204).send();
   });
 
   // ── Conceptgeneratie en preview (stap 6) ───────────────────────────────

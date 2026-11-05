@@ -29,6 +29,8 @@ export const config = {
   opslag: pad(env.STUDIO_OPSLAG ?? join(ROOT, 'data', 'opslag')),
   // Lokale beeldclassificatie (SigLIP) bij verwerkingen; 'uit' slaat haar over (tests).
   classificatie: env.STUDIO_CLASSIFICATIE !== 'uit',
+  // Inactiviteitsgrens voor de actieve gebruikerstijd: een langere pauze tussen twee interacties telt niet mee.
+  inactiviteitMs: Math.max(1, Number(env.STUDIO_INACTIVITEIT_MIN ?? 5)) * 60e3,
 };
 
 if (!config.dbUrl) throw new Error('STUDIO_DB_URL ontbreekt (zie .env.voorbeeld)');

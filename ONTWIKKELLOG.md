@@ -129,3 +129,16 @@ Uitgevoerd in een tijdelijke demo-omgeving (`studio_demo`, 5481/8481), met de or
 | Correcties | Hele dashboardrij klikbaar (de naam blijft het toetsenbordpad), "Openen →" en een kolom Concepten; kaart "Conceptversies" op de projectpagina met per versie "Preview bekijken" of de reden waarom er nog geen concept is; directe link per versie (`#/projecten/:id/concept/v<n>`) met een melding als de versie niet bestaat; API-veld `concepten` (aantal versies) bij projecten; fasebalk op mobiel in één kolom (liep bij 390 px buiten beeld) |
 | Controle | Route dashboard → project → concepten op 1440 en 390 px doorlopen in een geïsoleerde kopie van de database (eigen poorten, testbeheerder alleen in de kopie): rijklik opent het project, geen concept en uitgeschakelde genereerknop correct gemeld, geen consolefouten, geen horizontaal scrollen. Woninggegevens en opslag ongewijzigd |
 | Tests | 67 groen (concepttest uitgebreid met het aantal versies in lijst en detail); 81 generatortests groen; productie-instantie ongewijzigd |
+
+## Optimalisatie beoordeling en tijdregistratie (5-11-2026)
+
+| Onderdeel | Uitkomst |
+|---|---|
+| Oorzaak "ruim 4 uur menselijke controle" bij Markt 27 v1 | De meting was kloktijd van de import (17:33) tot de vrijgave (21:56), inclusief stilstand. Uit het besluitenlog: 13 besluiten tussen 21:50:36 en 21:56:37, zonder pauze > 5 min. Interacties werden toen niet geregistreerd; lezen vóór het eerste besluit is niet vast te stellen |
+| Snelle beoordeling | Bronovername als eigen besluit (wie, wanneer, import, sha256), geldt alleen voor die bronversie; gegevens blijven `overgenomen` (geen verificatie). Eén handeling voor overname, verplichte keuzes, kwaliteitscontrole en vrijgave; invoer eerst volledig gecontroleerd, daarna pas vastgelegd. Nieuw verplicht punt "Broninformatie overgenomen als uitgangspunt of afzonderlijk beoordeeld" |
+| Fase-afhankelijk | Inhoudelijke tegenstrijdigheden blokkeren het interne concept niet meer; gebruikte waarde zichtbaar en onbevestigd in de export; vóór publicatie verplicht. `concept.uitgangspunten` legt bronovername en open onzekerheden per versie vast |
+| Tijdregistratie | Machinetijd, actieve gebruikerstijd (interacties + handelingen, inactiviteitsgrens `STUDIO_INACTIVITEIT_MIN` = 5) en kalenderdoorlooptijd afzonderlijk; betrouwbaarheid per meting. Historische metingen (v1) ongewijzigd; het scherm markeert ze en toont een achteraf afgeleide indicatie |
+| Kwaliteitsmeldingen | Vier categorieën, samenvatting met aantallen en prioriteit, actie per melding (conceptgeneratie, publicatie, geen), technische details uitklapbaar |
+| Migratie | `008_overname_tijd.sql` (tabel `activiteit`, kolom `concept.uitgangspunten`); back-up vooraf. Concept v1, gegevens, besluiten, audit, project en alle 713 opgeslagen bestanden gecontroleerd ongewijzigd |
+| Controle | Schermen in een geïsoleerde kopie (eigen poorten, testbeheerder alleen daar) op 1440 en 390 px: geen consolefouten, geen horizontaal scrollen |
+| Tests | 71 groen (+4: actieve tijd, interacties, betrouwbaarheid, indeling; de concepttest loopt nu via de snelle beoordeling met een echte build). 81 generatortests groen; productie-instantie ongewijzigd |

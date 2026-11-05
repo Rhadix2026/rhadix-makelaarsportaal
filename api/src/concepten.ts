@@ -8,9 +8,11 @@ import { extname, join, normalize, sep } from 'node:path';
 import type pg from 'pg';
 import { audit } from './db.ts';
 import { legVast } from './besluiten.ts';
-import { beoordeling, exporteer, vingerafdruk } from './controle.ts';
+import { beoordeling, exporteer, uitgangspunten, vingerafdruk } from './controle.ts';
 import { opslagPad } from './opslag.ts';
 import { config } from './config.ts';
+import { actief } from './tijd.ts';
+import { deelConceptIn } from './indeling.ts';
 
 type Rij = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -60,12 +62,13 @@ export async function bereidVoor(c: pg.PoolClient, v: Rij) {
 export async function registreer(c: pg.PoolClient, v: Rij, meta: Rij, r: Rij, duur: number) {
   const gebruiker = v.aangevraagd_door as string;
   const metingen = await meet(c, v.project_id, duur, r);
+  const basis = await uitgangspunten(c, v.project_id);
   const token = randomBytes(32).toString('base64url');
   const concept = (await c.query(`INSERT INTO concept (project_id, kantoor_id, versie, verwerking_id, map, invoer_vingerafdruk, build_vingerafdruk, ontwerpsysteem, profiel,
-      generator_commit, bouw, kwaliteit, metingen, voorbeeld_token, aangemaakt_door)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id, versie`,
+      generator_commit, bouw, kwaliteit, metingen, voorbeeld_token, aangemaakt_door, uitgangspunten)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id, versie`,
     [v.project_id, v.kantoor_id, meta.versie, v.id, meta.map, meta.invoerVinger, r.bouw.vingerafdruk, r.bouw.ontwerpsysteem.versie, r.bouw.profiel,
-      r.generator_commit, JSON.stringify(r.bouw), JSON.stringify(r.kwaliteit ?? null), JSON.stringify(metingen), token, gebruiker])).rows[0];
+      r.generator_commit, JSON.stringify(r.bouw), JSON.stringify(r.kwaliteit ?? null), JSON.stringify(metingen), token, gebruiker, JSON.stringify(basis)])).rows[0];
   await c.query(`UPDATE verwerking SET status = 'klaar', klaar_op = now(), duur_ms = $2, stappen = $3, generator_commit = $4, rapport = $5 WHERE id = $1`,
     [v.id, duur, JSON.stringify(r.tijden_ms), r.generator_commit, JSON.stringify({ concept: concept.id, versie: concept.versie })]);
   // Een concept staat klaar voor de interne beoordeling (geen publicatie).
@@ -75,7 +78,11 @@ export async function registreer(c: pg.PoolClient, v: Rij, meta: Rij, r: Rij, du
   return concept;
 }
 
-/** Metingen: aanlevering en import, menselijke controle, generatie, correcties, totale tijd. */
+/**
+ * Metingen, afzonderlijk: machinetijd, actieve gebruikerstijd (uit interacties, met
+ * inactiviteitsgrens) en kalenderdoorlooptijd (inclusief stilstand). Versie 2; versies van vóór
+ * migratie 008 houden hun oorspronkelijke metingen (zie metingen.versie).
+ */
 async function meet(c: pg.PoolClient, projectId: string, duur: number, r: Rij) {
   const t = (s: string | Date | null | undefined) => (s ? new Date(s).getTime() : null);
   const eerste = (await c.query("SELECT min(geupload_op) AS t FROM bestand WHERE project_id = $1 AND herkomst = 'upload'", [projectId])).rows[0].t;
@@ -87,18 +94,27 @@ async function meet(c: pg.PoolClient, projectId: string, duur: number, r: Rij) {
     count(*) FILTER (WHERE besluit IS NOT NULL)::int AS besloten FROM gegeven WHERE project_id = $1`, [projectId])).rows[0];
   const besluiten = (await c.query("SELECT count(*)::int AS n FROM besluit WHERE project_id = $1 AND onderwerp NOT LIKE 'concept %'", [projectId])).rows[0].n;
   const eerderConcept = (await c.query('SELECT count(*)::int AS n FROM concept WHERE project_id = $1', [projectId])).rows[0].n;
-  const nu = Date.now();
+  const nu = new Date();
   const machine = (imp?.duur_ms ?? 0) + kc.ms + duur;
+  const actiefTotaal = await actief(c, projectId, nu);
+  const actiefTotVrijgave = p.vrijgave?.op ? await actief(c, projectId, new Date(p.vrijgave.op)) : null;
+  const samen = machine + actiefTotaal.ms;
   return {
+    versie: 2,
     aanlevering_import: { import_ms: imp?.duur_ms ?? null, upload_tot_import_ms: eerste && eersteImport ? t(eersteImport.klaar_op)! - t(eerste)! : null },
-    menselijke_controle: { doorloop_ms: eersteImport && p.vrijgave?.op ? t(p.vrijgave.op)! - t(eersteImport.klaar_op)! : null, besluiten,
-      toelichting: 'kloktijd van de eerste import tot de vrijgave (inclusief pauzes)' },
     conceptgeneratie: { totaal_ms: duur, stappen: r.tijden_ms, kwaliteitscontroles_ms: kc.ms },
+    actief: { totaal: actiefTotaal, tot_vrijgave: actiefTotVrijgave, besluiten },
+    kalender: {
+      ms: eerste ? nu.getTime() - t(eerste)! : null, import_tot_vrijgave_ms: eersteImport && p.vrijgave?.op ? t(p.vrijgave.op)! - t(eersteImport.klaar_op)! : null,
+      toelichting: 'kloktijd van de eerste upload tot dit concept, inclusief pauzes en stilstand; geen maat voor de inzet',
+    },
     correcties: { gegevens_gecorrigeerd: g.gecorrigeerd, gegevens_afgewezen: g.afgewezen, tegenstrijdigheden_besloten: g.besloten, compositie: r.bouw?.rapport?.correcties ?? 0 },
     totaal: {
-      machine_ms: machine, ambitie_ms: AMBITIE_MS, binnen_ambitie: machine <= AMBITIE_MS,
-      toelichting_machine: 'import + kwaliteitscontroles + conceptgeneratie: vanaf een volledige aanlevering tot het eerste concept, zonder menselijke beoordeling',
-      doorloop_ms: eerste ? nu - t(eerste)! : null, toelichting_doorloop: 'kloktijd van de eerste upload tot dit concept, inclusief menselijke controle',
+      machine_ms: machine, ambitie_ms: AMBITIE_MS, binnen_ambitie_machine: machine <= AMBITIE_MS,
+      toelichting_machine: 'import + kwaliteitscontroles + conceptgeneratie, zonder menselijke handelingen',
+      machine_en_actief_ms: samen,
+      // Alleen te beoordelen als de actieve tijd betrouwbaar is geregistreerd; anders niet vast te stellen.
+      binnen_ambitie: actiefTotaal.betrouwbaar ? samen <= AMBITIE_MS : null,
       eerste_concept: eerderConcept === 0,
     },
   };
@@ -113,8 +129,13 @@ export async function lijstConcepten(c: pg.PoolClient, projectId: string) {
 }
 
 export async function leesConcept(c: pg.PoolClient, id: string) {
-  return (await c.query(`SELECT k.*, g.naam AS aangemaakt_door_naam, b.naam AS beoordeeld_door_naam FROM concept k LEFT JOIN gebruiker g ON g.id = k.aangemaakt_door
+  const k = (await c.query(`SELECT k.*, g.naam AS aangemaakt_door_naam, b.naam AS beoordeeld_door_naam FROM concept k LEFT JOIN gebruiker g ON g.id = k.aangemaakt_door
     LEFT JOIN gebruiker b ON b.id = k.beoordeeld_door WHERE k.id = $1`, [id])).rows[0] ?? null;
+  if (!k) return null;
+  // Alleen presentatie: de opgeslagen kwaliteit en metingen blijven ongewijzigd. Voor versies van
+  // vóór de tijdregistratie wordt de actieve tijd achteraf afgeleid en als zodanig gemarkeerd.
+  const achteraf = k.metingen?.versie === 2 ? null : { ...(await actief(c, k.project_id, new Date(k.aangemaakt_op))), afgeleid: 'achteraf berekend bij het bekijken, niet opgeslagen bij de versie' };
+  return { ...k, indeling: deelConceptIn(k.kwaliteit), tijd_achteraf: achteraf };
 }
 
 /** Beoordeling van een concept: accepteren, of verbeterpunten vastleggen. De versie zelf blijft ongewijzigd. */

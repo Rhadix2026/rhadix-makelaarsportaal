@@ -5,6 +5,8 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { api, ApiFout, type Beoordeling as Data, type Ik, type ProjectCatalogus } from './api.ts';
 import { Badge, Kaart, type Toon } from './onderdelen/basis.tsx';
 import { GegevenRij } from './Aanlevering.tsx';
+import { Meldingenoverzicht } from './onderdelen/Meldingen.tsx';
+import { useActiviteit } from './onderdelen/activiteit.ts';
 
 const FASE_TOON: Record<string, Toon> = { gereed: 'goed', open: 'let-op', wacht: 'info' };
 const FASE_TEKST: Record<string, string> = { gereed: 'gereed', open: 'actie nodig', wacht: 'wacht op vorige fase' };
@@ -41,7 +43,55 @@ function Tegel({ getal, label, toon: t }: { getal: ReactNode; label: string; too
   return <div className="tegel"><span className={`fk-getal${t === 'goed' ? ' fk-goed' : t === 'let-op' ? ' fk-let-op' : ''}`}>{getal}</span><span className="fk-label">{label}</span></div>;
 }
 
+/**
+ * Snelle beoordeling: de bron overnemen als uitgangspunt (geen inhoudelijke bevestiging), de
+ * verplichte keuzes met de voorstellen van de import, de kwaliteitscontrole en de vrijgave in één
+ * handeling. De uitgebreide beoordeling hieronder blijft beschikbaar.
+ */
+function SnelleBeoordeling({ d, profielen, bezig, voerUit }: { d: Data; profielen: ProjectCatalogus['profielen']; bezig: boolean; voerUit: (data: Record<string, unknown>) => void }) {
+  const b = d.beslissingen;
+  const [v, setV] = useState<Record<string, string>>({ profiel: b.profiel_voorstel?.waarde ?? '', openingsbeeld: b.openingsbeeld_voorstel ?? '' });
+  const [akkoord, setAkkoord] = useState(false);
+  const zet = (k: string) => (e: { target: { value: string } }) => setV({ ...v, [k]: e.target.value });
+  const ok = (code: string) => d.checklist.find((x) => x.code === code)?.ok;
+  const open = d.broncontrole.te_beoordelen.filter((g) => g.signalen.includes('tegenstrijdigheid') || g.signalen.includes('terminologie'));
+  const nodig = { rechten: !b.rechten?.bevestigd, profiel: !b.profiel, adres: !b.domein && !b.conceptadres, beeld: !ok('openingsbeeld'), foto: b.fotokwaliteit.nodig && !b.fotokwaliteit.akkoord };
+  const kan = akkoord && (!nodig.rechten || (v.rechten ?? '').trim().length >= 3) && (!nodig.profiel || !!v.profiel)
+    && (!nodig.beeld || !!v.openingsbeeld);
+  return (
+    <section className="kaart snel">
+      <h2>Snelle beoordeling</h2>
+      <p className="bron" style={{ marginTop: 0 }}>Neem de broninformatie in één keer over als uitgangspunt en laat de studio de kwaliteitscontrole uitvoeren en vrijgeven.
+        <strong> Overnemen is geen inhoudelijke bevestiging:</strong> de gegevens blijven 'overgenomen' en gaan als onbevestigd mee in het concept. Wilt u gegevens afzonderlijk controleren,
+        corrigeren of afwijzen, gebruik dan de uitgebreide beoordeling hieronder.</p>
+      {d.bronovername.verouderd && <p className="melding melding-let-op">Er is een eerdere overname, maar die hoort bij een oudere bronversie (voor een nieuwe import). Bevestig opnieuw.</p>}
+      <label className="snel-verklaring"><input type="checkbox" checked={akkoord} onChange={(e) => setAkkoord(e.target.checked)} />{d.bronovername.verklaring}</label>
+      <p className="bron">Bronversie: brochure-PDF, import {d.bronovername.bron?.volgnummer}, sha256 <span className="mono">{(d.bronovername.bron?.sha256 ?? '').slice(0, 12)}</span> · {d.broncontrole.telling.overgenomen} gegevens nog niet afzonderlijk gecontroleerd.
+        {open.length > 0 && <> Open punten blijven zichtbaar en zijn vóór publicatie verplicht: {open.map((g) => `${g.label} (gebruikt: ${String(g.vastgelegd?.waarde ?? '—')})`).join('; ')}.</>}</p>
+      <div className="snel-velden">
+        {nodig.rechten && <div className="veld"><label htmlFor="snel-rechten">Publicatierechten: waarop berust de toestemming?</label>
+          <input id="snel-rechten" placeholder="Bijvoorbeeld: bevestigd door de makelaar per mail" value={v.rechten ?? ''} onChange={zet('rechten')} /></div>}
+        {nodig.profiel && <div className="veld"><label htmlFor="snel-profiel">Presentatieprofiel</label>
+          <select id="snel-profiel" value={v.profiel} onChange={zet('profiel')}><option value="">Kies een profiel</option>
+            {profielen.map((p) => <option key={p.naam} value={p.naam}>{p.naam}{b.profiel_voorstel?.waarde === p.naam ? ' (voorstel)' : ''}</option>)}</select></div>}
+        {nodig.adres && <div className="veld"><label htmlFor="snel-domein">Websiteadres (optioneel)</label>
+          <input id="snel-domein" placeholder={`leeg = tijdelijk conceptadres ${d.project.slug}.invalid`} value={v.domein ?? ''} onChange={zet('domein')} /></div>}
+        {nodig.beeld && <div className="veld"><label htmlFor="snel-beeld">Openingsbeeld</label>
+          <select id="snel-beeld" value={v.openingsbeeld} onChange={zet('openingsbeeld')}><option value="">Kies een foto</option>
+            {b.openingsbeeld_kandidaten.map((f) => <option key={f.id} value={f.id}>{f.herkomst === 'brochure' ? `brochure p. ${f.pagina}` : 'losse foto'}, {f.breedte}×{f.hoogte}{b.openingsbeeld_voorstel === f.id ? ' (voorstel)' : ''}</option>)}</select></div>}
+        {nodig.foto && <div className="veld"><label htmlFor="snel-foto">Fotokwaliteit (aanbevolen, optioneel): originelen ontbreken; waarom mag het eerste concept hiermee?</label>
+          <input id="snel-foto" placeholder="Bijvoorbeeld: brochurebeelden; originelen opgevraagd" value={v.foto ?? ''} onChange={zet('foto')} /></div>}
+      </div>
+      <button type="button" className="knop knop-primair" disabled={bezig || !kan}
+        onClick={() => voerUit({ overnemen: true, rechten: v.rechten, profiel: v.profiel, domein: v.domein, openingsbeeld: v.openingsbeeld, fotokwaliteit: v.foto })}>
+        Overnemen, controleren en vrijgeven</button>
+      <p className="bron">Elke stap komt afzonderlijk in het besluitenlog, met wie, wanneer en welke bronversie. Er wordt niets gegenereerd of gepubliceerd.</p>
+    </section>
+  );
+}
+
 export function BeoordelingScherm({ id, ik }: { id: string; ik: Ik }) {
+  useActiviteit(id, 'beoordeling');
   const { d, setD, fout, laad } = useBeoordeling(id);
   const [melding, setMelding] = useState<{ toon: 'goed' | 'fout'; tekst: string } | null>(null);
   const [bezig, setBezig] = useState(false);
@@ -86,6 +136,13 @@ export function BeoordelingScherm({ id, ik }: { id: string; ik: Ik }) {
       <Fasebalk fasen={d.fasen} projectId={id} />
       {melding && <p className={`melding melding-${melding.toon}`} role="status" style={{ marginBottom: 16 }}>{melding.tekst}</p>}
 
+      {beheer && !d.vrijgave.vrijgegeven && <SnelleBeoordeling d={d} profielen={profielen} bezig={bezig} voerUit={(data) => doe(async () => {
+        const r = await api<{ beoordeling: Data; gedaan: string[]; open: { titel: string }[] }>(`/api/projecten/${id}/snelle-beoordeling`, { methode: 'POST', data });
+        setD(r.beoordeling);
+        setMelding({ toon: r.open.length ? 'fout' : 'goed', tekst: `${r.gedaan.length ? `Uitgevoerd: ${r.gedaan.join(', ')}.` : 'Niets te doen.'}${r.open.length ? ` Nog open: ${r.open.map((o) => o.titel).join('; ')}.` : ''}` });
+        return r.beoordeling;
+      })} />}
+
       {/* ── Vrijgave (overzicht bovenaan: wat moet er nog gebeuren?) ── */}
       <section className={`kaart vrijgave vrijgave-${d.vrijgave.vrijgegeven ? 'gereed' : d.klaar ? 'klaar' : 'niet'}`} id="fase-4">
         <h2>4. Vrijgave voor conceptgeneratie</h2>
@@ -123,7 +180,7 @@ export function BeoordelingScherm({ id, ik }: { id: string; ik: Ik }) {
       <section className="kaart" id="fase-2">
         <h2>2. Broncontrole</h2>
         <div className="tegels">
-          <Tegel getal={t.overgenomen} label="overgenomen, nog te controleren" toon={t.overgenomen ? 'let-op' : 'goed'} />
+          <Tegel getal={t.overgenomen} label={d.bronovername.geldig ? 'overgenomen als uitgangspunt, niet afzonderlijk gecontroleerd' : 'overgenomen, nog te controleren'} toon={t.overgenomen && !d.bronovername.geldig ? 'let-op' : t.overgenomen ? undefined : 'goed'} />
           <Tegel getal={t.gecontroleerd} label="gecontroleerd (gelijk aan de brochure)" />
           <Tegel getal={t.gecorrigeerd} label="gecorrigeerd of aangevuld" />
           <Tegel getal={t.afgewezen} label="afgewezen" />
@@ -131,6 +188,10 @@ export function BeoordelingScherm({ id, ik }: { id: string; ik: Ik }) {
           <Tegel getal={t.ontbrekend} label="ontbreekt" toon={t.ontbrekend ? 'let-op' : undefined} />
         </div>
         <Punten fase={2} />
+        {d.bronovername.besluit && d.bronovername.geldig && <p className="bron">Bron overgenomen als uitgangspunt op {datum(d.bronovername.besluit.op)}{d.bronovername.besluit.door ? ` door ${d.bronovername.besluit.door}` : ''}
+          {' '}(bronversie: brochure-PDF, import {d.bronovername.besluit.waarde.volgnummer}, sha256 <span className="mono">{(d.bronovername.besluit.waarde.sha256 ?? '').slice(0, 12)}</span>).
+          Dit is geen individuele verificatie van de feiten.
+          {beheer && <> <button type="button" className="tekstknop" disabled={bezig} onClick={() => beslis('bronovername', { bevestigd: false }, 'Overname ingetrokken.')}>Overname intrekken</button></>}</p>}
         {d.broncontrole.te_beoordelen.length > 0 ? <>
           <h3 className="tussenkop">Te beoordelen ({d.broncontrole.te_beoordelen.length})</h3>
           <p className="bron" style={{ marginTop: 0 }}>Gegevens met een waarschuwing worden afzonderlijk beoordeeld; de rest kan in één handeling worden goedgekeurd.</p>
@@ -218,13 +279,7 @@ export function BeoordelingScherm({ id, ik }: { id: string; ik: Ik }) {
         </div>
 
         <h3 className="tussenkop">Kwaliteitsrapport</h3>
-        {!kc ? <p className="bron">Voer de kwaliteitscontrole uit om het rapport te zien.</p> : (['blokkerend', 'aandacht', 'info'] as const).map((n) => (
-          <section key={n} className={`meldgroep meldgroep-${n}`}>
-            <h3>{{ blokkerend: 'Blokkades', aandacht: 'Aandachtspunten', info: 'Informatie' }[n]} <span className="meldgroep-aantal">{kc.resultaat[n].length}</span></h3>
-            {kc.resultaat[n].length ? <ul className="meldingen">{kc.resultaat[n].map((m, i) => <li key={i} className={`m-${n}`}><span className="melding-bron">{m.bron}</span> {m.tekst}</li>)}</ul>
-              : <p className="meldgroep-leeg">Geen.</p>}
-          </section>
-        ))}
+        {!kc ? <p className="bron">Voer de kwaliteitscontrole uit om het rapport te zien.</p> : <Meldingenoverzicht indeling={kc.indeling} />}
         {kc && kc.taal.length > 0 && <details className="uitklap"><summary>Meetwaarden taalcontrole</summary>
           <table className="lijst" style={{ marginTop: 8 }}><thead><tr><th>Criterium</th><th>Waarde</th><th>Norm</th><th></th></tr></thead>
             <tbody>{kc.taal.map((m) => <tr key={m.criterium}><td>{m.criterium}</td><td>{String(m.waarde)}</td><td>{m.norm}</td><td>{m.ok ? <Badge toon="goed">binnen norm</Badge> : <Badge toon="let-op">buiten norm</Badge>}</td></tr>)}</tbody></table></details>}

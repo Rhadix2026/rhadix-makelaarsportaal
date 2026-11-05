@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 're
 import { api, ApiFout, type ConceptenOverzicht, type Ik, type Kantoor, type Project, type ProjectCatalogus } from './api.ts';
 import { Badge, Kaart, PaginaTitel, StatKaart, type Toon } from './onderdelen/basis.tsx';
 import { ProfielKeuze } from './onderdelen/ProfielKeuze.tsx';
+import { useActiviteit } from './onderdelen/activiteit.ts';
 
 // ── Status en voortgang ─────────────────────────────────────────────────────
 const STATUS_TOON: Record<string, Toon> = {
@@ -166,6 +167,7 @@ export function Dashboard({ ik }: { ik: Ik }) {
 
 // ── Detail ─────────────────────────────────────────────────────────────────
 export function ProjectDetail({ id, ik }: { id: string; ik: Ik }) {
+  useActiviteit(id, 'project');
   const catalogus = useCatalogus();
   const [p, setP] = useState<Project | null>(null);
   const [fout, setFout] = useState<string | null>(null);

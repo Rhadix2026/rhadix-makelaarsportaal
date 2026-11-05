@@ -5,10 +5,13 @@
 //   blokkerend   moet opgelost zijn voordat er gegenereerd kan worden
 //   aandacht     vraagt een menselijke beoordeling
 //   info         ter kennisgeving, geen handeling nodig
+// Per melding staat ook waarvoor actie nodig is: de conceptgeneratie, de publicatie of geen van beide.
 import { soortConflict, type Conflict, type Kandidaat } from './gegevens.ts';
 
 export type Niveau = 'blokkerend' | 'aandacht' | 'info';
-export type Melding = { niveau: Niveau; titel: string; tekst?: string; sleutel?: string };
+export type Actie = 'conceptgeneratie' | 'publicatie' | 'geen';
+export type Melding = { niveau: Niveau; actie: Actie; titel: string; tekst?: string; sleutel?: string };
+const ACTIE: Record<Niveau, Actie> = { blokkerend: 'conceptgeneratie', aandacht: 'publicatie', info: 'geen' };
 export type Signaal = 'tegenstrijdigheid' | 'terminologie' | 'afwijking' | 'onzeker';
 export const SIGNAAL_TEKST: Record<Signaal, string> = {
   tegenstrijdigheid: 'inhoudelijke tegenstrijdigheid', terminologie: 'mogelijke terminologische afwijking',
@@ -82,10 +85,12 @@ export function meldingen(o: {
   foto: ReturnType<typeof fotokwaliteit>; makelaar: ReturnType<typeof vergelijkMakelaar>;
 }): Melding[] {
   const m: Melding[] = [];
-  const add = (niveau: Niveau, titel: string, tekst?: string, sleutel?: string) => m.push({ niveau, titel, ...(tekst ? { tekst } : {}), ...(sleutel ? { sleutel } : {}) });
+  const add = (niveau: Niveau, titel: string, tekst?: string, sleutel?: string) => m.push({ niveau, actie: ACTIE[niveau], titel, ...(tekst ? { tekst } : {}), ...(sleutel ? { sleutel } : {}) });
   if (!o.imp) return m;
   for (const g of o.gegevens) {
-    if (g.signalen.includes('tegenstrijdigheid')) add('blokkerend', `Inhoudelijke tegenstrijdigheid: ${g.label}`, `${lijst(g.conflict!.bronnen)}. Leg een besluit vast met motivering.`, g.sleutel);
+    // Fase-afhankelijk: blokkeert het interne concept niet (de vastgelegde waarde gaat als onbevestigd mee); vóór publicatie verplicht.
+    if (g.signalen.includes('tegenstrijdigheid')) add('aandacht', `Inhoudelijke tegenstrijdigheid: ${g.label}`,
+      `${lijst(g.conflict!.bronnen)}. Het concept gebruikt '${g.vastgelegd?.waarde ?? '—'}' als onbevestigd. Leg vóór publicatie een besluit vast met motivering.`, g.sleutel);
     if (g.signalen.includes('terminologie')) add('aandacht', `Mogelijke terminologische afwijking: ${g.label}`, `${lijst(g.conflict!.bronnen)}. Beoordeel of dit hetzelfde bedoelt en leg het besluit vast.`, g.sleutel);
     if (g.signalen.includes('afwijking')) add('aandacht', `Afwijking van de brochure: ${g.label}`, `Vastgelegd '${g.vastgelegd?.waarde}', brochure '${g.extractie?.waarde}' (${g.extractie?.bron}).`, g.sleutel);
     if (g.vastgelegd?.besluit) add('info', `Besloten: ${g.label} = ${g.vastgelegd.waarde}${g.vastgelegd.eenheid ? ` ${g.vastgelegd.eenheid}` : ''}`, `Motivering: ${g.vastgelegd.besluit.motivering}`, g.sleutel);

@@ -17,6 +17,7 @@ import { legVast, leesBesluiten } from './besluiten.ts';
 import { generatorCommit, generatorModule, generatorVersie, huisstijlFuncties, profielen, valideerManifest } from './generator.ts';
 import { laatsteImport, overzicht } from './aanlevering.ts';
 import { opslagPad } from './opslag.ts';
+import { deelControleIn } from './indeling.ts';
 
 type Rij = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -210,6 +211,11 @@ export function deelIn(r: Rij | null) {
 }
 
 // ── Status: fasen, broncontrole, checklist en vrijgave ──────────────────────
+// Snelle beoordeling: de bron overnemen als uitgangspunt. Dit is uitdrukkelijk géén inhoudelijke
+// bevestiging: de gegevens behouden hun status 'overgenomen' en gaan als onbevestigd mee.
+const OVERNAME = 'overgenomen als uitgangspunt';
+export const OVERNAME_VERKLARING = 'Neem de aangeleverde brochuregegevens en overige broninformatie over als uitgangspunt voor het eerste concept.';
+
 export async function beoordeling(c: pg.PoolClient, projectId: string) {
   const o = await overzicht(c, projectId);
   if (!o) return null;
@@ -253,6 +259,10 @@ export async function beoordeling(c: pg.PoolClient, projectId: string) {
   const fotoAkkoord = o.fotokwaliteit.originelen_nodig === 0 && o.fotokwaliteit.losse_onder_norm === 0
     || (fotoBesluit?.handeling === 'geaccepteerd voor eerste concept' && fotoBesluit.waarde?.fotoset === fotoset);
 
+  // Bronovername (snelle beoordeling): geldt alleen voor de bronversie (import) waarvoor zij is bevestigd.
+  const overnameBesluit = besluiten.find((b) => b.onderwerp === 'bronovername') ?? null;
+  const overname = overnameBesluit?.handeling === OVERNAME && overnameBesluit.waarde?.import === o.import?.id ? overnameBesluit : null;
+
   const lopend = (o.verwerkingen as Rij[]).some((v) => v.soort !== 'kwaliteitscontrole' && ['wachtrij', 'bezig'].includes(v.status));
   const actueel = !!kc && kc.vingerafdruk === vinger;
   // Verplicht (blokkeert de conceptgeneratie): kritische gegevens, onopgeloste inhoudelijke
@@ -262,9 +272,15 @@ export async function beoordeling(c: pg.PoolClient, projectId: string) {
   const checklist = [
     punt(1, 'import', 'Brochure aangeleverd en geïmporteerd', !!o.import, 'Lever de brochure aan en start de import.'),
     punt(1, 'verwerking', 'Geen verwerking meer bezig', !lopend, 'Wacht tot de verwerking klaar is.'),
+    punt(2, 'bron', 'Broninformatie overgenomen als uitgangspunt of afzonderlijk beoordeeld', telling.overgenomen === 0 || !!overname,
+      'Bevestig dat de brochuregegevens als uitgangspunt voor het eerste concept worden overgenomen (snelle beoordeling), of beoordeel de gegevens afzonderlijk.'),
+    // Fase-afhankelijk: voor een intern concept blokkeren tegenstrijdigheden niet. De gebruikte
+    // (brochure)waarde gaat als onbevestigd mee en blijft zichtbaar; voor publicatie is een besluit verplicht.
     punt(2, 'tegenstrijdigheden', 'Inhoudelijke tegenstrijdigheden besloten', telling.inhoudelijk_opgelost === telling.inhoudelijk,
-      `Leg een besluit vast voor ${telling.inhoudelijk - telling.inhoudelijk_opgelost} inhoudelijke tegenstrijdigheid/tegenstrijdigheden.`),
-    punt(2, 'gegevens', 'Alle gegevens beoordeeld', telling.overgenomen === 0, `${telling.overgenomen} gegeven(s) nog niet beoordeeld; ze gaan als onbevestigd mee in het concept.`, false),
+      `${telling.inhoudelijk - telling.inhoudelijk_opgelost} inhoudelijke tegenstrijdigheid/tegenstrijdigheden open: het concept gebruikt de vastgelegde waarde als onbevestigd. Vóór publicatie is een besluit verplicht.`, false),
+    punt(2, 'gegevens', 'Alle gegevens afzonderlijk gecontroleerd', telling.overgenomen === 0, overname
+      ? `${telling.overgenomen} gegeven(s) overgenomen als uitgangspunt, niet afzonderlijk gecontroleerd; ze gaan als onbevestigd mee. Controle vóór publicatie.`
+      : `${telling.overgenomen} gegeven(s) nog niet beoordeeld; ze gaan als onbevestigd mee in het concept.`, false),
     punt(2, 'terminologie', 'Terminologische afwijkingen beoordeeld', telling.opgelost - telling.inhoudelijk_opgelost === telling.tegenstrijdig - telling.inhoudelijk,
       'Beoordeel de mogelijke terminologische afwijking(en).', false),
     punt(2, 'verplicht', 'Straat, huisnummer en plaats vastgelegd', ['adres', 'plaats'].every((s) => g.some((x) => x.sleutel === s && x.vastgelegd && x.vastgelegd.status !== 'afgewezen')), 'Vul straat, huisnummer en plaats aan.'),
@@ -296,7 +312,7 @@ export async function beoordeling(c: pg.PoolClient, projectId: string) {
   return {
     project: o.project, fasen, checklist, klaar, vingerafdruk: vinger,
     broncontrole: { telling, te_beoordelen: teBeoordelen, vastgesteld: g.filter((x) => !sleutelsTeBeoordelen.has(x.sleutel)) },
-    kwaliteit: kc && { id: kc.id, volgnummer: kc.volgnummer, klaar_op: kc.klaar_op, duur_ms: kc.duur_ms, generator_commit: kc.generator_commit, actueel, resultaat, taal: kc.rapport.taal?.meetwaarden ?? [] },
+    kwaliteit: kc && { id: kc.id, volgnummer: kc.volgnummer, klaar_op: kc.klaar_op, duur_ms: kc.duur_ms, generator_commit: kc.generator_commit, actueel, resultaat, indeling: deelControleIn(resultaat), taal: kc.rapport.taal?.meetwaarden ?? [] },
     meldingen: o.meldingen, fotokwaliteit: o.fotokwaliteit,
     beslissingen: {
       rechten: p.rechten, profiel: p.profiel, profiel_voorstel: o.import?.profiel ?? null, domein: p.domein, conceptadres: p.conceptadres,
@@ -304,7 +320,35 @@ export async function beoordeling(c: pg.PoolClient, projectId: string) {
       fotokwaliteit: { nodig: !(o.fotokwaliteit.originelen_nodig === 0 && o.fotokwaliteit.losse_onder_norm === 0), akkoord: fotoAkkoord, besluit: fotoBesluit ?? null, fotoset },
     },
     vrijgave: { ...(p.vrijgave ?? {}), vrijgegeven, actueel: vrijgegeven && p.vrijgave?.vingerafdruk === vinger },
+    bronovername: {
+      geldig: !!overname, besluit: overname, verklaring: OVERNAME_VERKLARING,
+      // Een eerdere overname voor een andere bronversie (bijvoorbeeld vóór een nieuwe import) geldt niet meer.
+      verouderd: overnameBesluit?.handeling === OVERNAME && !overname,
+      bron: o.import ? { import: o.import.id, volgnummer: o.import.volgnummer, bestand: o.import.bron ?? null, sha256: o.import.sha256 ?? null } : null,
+    },
     besluiten,
+  };
+}
+
+/**
+ * Waarop een concept rust, vastgelegd bij het genereren: de bronovername en de open onzekerheden
+ * (gebruikte waarde, de bronnen die elkaar tegenspreken). De studio lost niets zelf op en vult
+ * niets aan; wat ontbreekt blijft ontbreken.
+ */
+export async function uitgangspunten(c: pg.PoolClient, projectId: string) {
+  const st = await beoordeling(c, projectId);
+  if (!st) return null;
+  const g = [...st.broncontrole.te_beoordelen, ...st.broncontrole.vastgesteld] as Rij[];
+  const waarde = (x: Rij) => (x.vastgelegd ? `${x.vastgelegd.waarde}${x.vastgelegd.eenheid ? ` ${x.vastgelegd.eenheid}` : ''}` : null);
+  return {
+    bronovername: st.bronovername.besluit ? { door: st.bronovername.besluit.door, op: st.bronovername.besluit.op, ...st.bronovername.besluit.waarde } : null,
+    onzekerheden: g.filter((x) => x.conflict && !x.vastgelegd?.besluit && x.vastgelegd?.status !== 'afgewezen').map((x) => ({
+      sleutel: x.sleutel, gegeven: x.label, soort: x.conflict.ernst === 'conflict' ? 'tegenstrijdigheid' : 'terminologie',
+      gebruikte_waarde: waarde(x), verificatie: x.vastgelegd?.status === 'goedgekeurd' ? 'bevestigd' : 'onbevestigd', bronnen: x.conflict.bronnen, bron: x.vastgelegd?.bron ?? null,
+    })),
+    onbevestigd: g.filter((x) => x.vastgelegd?.status === 'overgenomen').map((x) => x.label),
+    ontbrekend: g.filter((x) => !x.vastgelegd).map((x) => x.label),
+    gecontroleerd: st.broncontrole.telling.gecontroleerd + st.broncontrole.telling.gecorrigeerd,
   };
 }
 
@@ -315,7 +359,21 @@ export async function beslis(c: pg.PoolClient, gebruiker: string, projectId: str
   const motivering = typeof b.motivering === 'string' ? b.motivering.trim() : '';
   const log = (handeling: string, waarde?: unknown) => legVast(c, { project: projectId, door: gebruiker, onderwerp, handeling, waarde, motivering });
   const zet = (sql: string, v: unknown[]) => c.query(`UPDATE project SET ${sql}, gewijzigd_op = now() WHERE id = $1`, [projectId, ...v]);
-  if (onderwerp === 'rechten') {
+  if (onderwerp === 'bronovername') {
+    const imp = await laatsteImport(c, projectId);
+    if (!imp) return { fout: 'waarde' as const, melding: 'Er is nog geen brochure-import om over te nemen' };
+    if (b.bevestigd === true) {
+      const g = [...st.broncontrole.te_beoordelen, ...st.broncontrole.vastgesteld] as Rij[];
+      const open = (ernst: string) => g.filter((x) => x.conflict?.ernst === ernst && !x.vastgelegd?.besluit).map((x) => x.label);
+      // Wie, wanneer (besluitenlog) en welke bronversie: import, bestand en sha256 van de brochure.
+      await log(OVERNAME, {
+        import: imp.id, volgnummer: imp.volgnummer, bestand: imp.rapport?.bron ?? null, sha256: imp.rapport?.sha256 ?? null, generator_commit: imp.generator_commit,
+        verklaring: OVERNAME_VERKLARING, betekenis: 'uitgangspunt voor het eerste concept; geen inhoudelijke bevestiging of individuele verificatie van de feiten',
+        overgenomen: st.broncontrole.telling.overgenomen, open_tegenstrijdigheden: open('conflict'), open_terminologie: open('onduidelijk'),
+      });
+    } else if (b.bevestigd === false) await log('overname ingetrokken', { import: imp.id });
+    else return { fout: 'waarde' as const, melding: 'Bevestig of trek de overname in' };
+  } else if (onderwerp === 'rechten') {
     if (b.bevestigd === true) {
       if (motivering.length < 3) return { fout: 'motivering' as const };
       await zet('rechten = $2', [JSON.stringify({ bevestigd: true, toelichting: motivering, door: gebruiker, op: new Date().toISOString() })]);
@@ -354,3 +412,54 @@ export async function beslis(c: pg.PoolClient, gebruiker: string, projectId: str
   return { beoordeling: await beoordeling(c, projectId) };
 }
 
+
+/**
+ * Snelle beoordeling: in één handeling de bron overnemen als uitgangspunt, de verplichte keuzes
+ * vastleggen (met voorstellen van de import als standaard), de kwaliteitscontrole uitvoeren en
+ * vrijgeven als alles verplichte in orde is. Gebruikt uitsluitend de bestaande beslissingen; elke
+ * stap komt afzonderlijk in het besluitenlog. Eerst wordt alle invoer gecontroleerd, daarna pas
+ * vastgelegd. De gegevens zelf blijven 'overgenomen' (geen individuele verificatie).
+ */
+export async function snelleBeoordeling(c: pg.PoolClient, gebruiker: string, projectId: string, b: Rij) {
+  const st = await beoordeling(c, projectId);
+  if (!st) return { fout: 'onbekend' as const };
+  if (b.overnemen !== true) return { fout: 'waarde' as const, melding: 'Bevestig dat de broninformatie als uitgangspunt wordt overgenomen' };
+  if (!st.bronovername.bron) return { fout: 'waarde' as const, melding: 'Er is nog geen brochure-import om over te nemen' };
+  const tekst = (x: unknown) => (typeof x === 'string' ? x.trim() : '');
+  const bs = st.beslissingen;
+  const plan: [string, Rij, string][] = [];
+  if (!st.bronovername.geldig) plan.push(['bronovername', { bevestigd: true, motivering: tekst(b.motivering) || 'snelle beoordeling' }, 'broninformatie overgenomen als uitgangspunt']);
+  if (!bs.rechten?.bevestigd) {
+    if (tekst(b.rechten).length < 3) return { fout: 'waarde' as const, melding: 'Licht toe waarop de publicatierechten berusten' };
+    plan.push(['rechten', { bevestigd: true, motivering: tekst(b.rechten) }, 'publicatierechten bevestigd']);
+  }
+  if (!bs.profiel) {
+    const profiel = tekst(b.profiel) || bs.profiel_voorstel?.waarde;
+    if (!profiel) return { fout: 'waarde' as const, melding: 'Kies een presentatieprofiel' };
+    if (!(await profielen()).includes(profiel)) return { fout: 'waarde' as const, melding: 'Onbekend presentatieprofiel' };
+    plan.push(['profiel', { profiel, motivering: 'snelle beoordeling' }, `profiel ${profiel}`]);
+  }
+  if (!bs.domein && !bs.conceptadres) plan.push(['websiteadres', tekst(b.domein) ? { domein: tekst(b.domein) } : { conceptadres: true, motivering: 'snelle beoordeling' }, tekst(b.domein) ? `domein ${tekst(b.domein)}` : 'tijdelijk conceptadres']);
+  if (!st.checklist.find((x) => x.code === 'openingsbeeld')?.ok) {
+    const id = tekst(b.openingsbeeld) || bs.openingsbeeld_voorstel;
+    if (!id || !bs.openingsbeeld_kandidaten.some((x: Rij) => x.id === id)) return { fout: 'waarde' as const, melding: 'Kies een geschikt openingsbeeld' };
+    plan.push(['openingsbeeld', { bestand_id: id, motivering: 'snelle beoordeling' }, 'openingsbeeld gekozen']);
+  }
+  // Fotokwaliteit is aanbevolen, niet verplicht: alleen vastleggen als er een toelichting is.
+  if (bs.fotokwaliteit.nodig && !bs.fotokwaliteit.akkoord && tekst(b.fotokwaliteit).length >= 3)
+    plan.push(['fotokwaliteit', { motivering: tekst(b.fotokwaliteit) }, 'fotokwaliteit geaccepteerd voor het eerste concept']);
+
+  const gedaan: string[] = [];
+  for (const [onderwerp, data, wat] of plan) {
+    const r = await beslis(c, gebruiker, projectId, onderwerp, data);
+    if ('fout' in r) throw new Error(`snelle beoordeling: ${onderwerp} geweigerd na de controle vooraf`);
+    gedaan.push(wat);
+  }
+  let na = (await beoordeling(c, projectId))!;
+  if (!na.kwaliteit?.actueel) { await kwaliteitscontrole(c, gebruiker, projectId); gedaan.push('kwaliteitscontrole uitgevoerd'); na = (await beoordeling(c, projectId))!; }
+  if (na.klaar && !na.vrijgave.vrijgegeven) {
+    await beslis(c, gebruiker, projectId, 'vrijgave', { motivering: tekst(b.motivering) || 'snelle beoordeling' });
+    gedaan.push('vrijgegeven voor conceptgeneratie'); na = (await beoordeling(c, projectId))!;
+  }
+  return { beoordeling: na, gedaan, open: na.checklist.filter((x) => x.verplicht && !x.ok) };
+}

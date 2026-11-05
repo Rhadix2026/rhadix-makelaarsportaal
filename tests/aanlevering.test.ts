@@ -167,7 +167,11 @@ test('brochure-import Markt 27: zelfde resultaat als de generator, gegevens aang
 
   // Meldingen in drie niveaus.
   const niveau = (t: RegExp) => o.meldingen.find((m: { titel: string }) => t.test(m.titel))?.niveau;
-  assert.equal(niveau(/^Inhoudelijke tegenstrijdigheid: Kamers/), 'blokkerend');
+  // Fase-afhankelijk: een inhoudelijke tegenstrijdigheid blokkeert het interne concept niet, wel de publicatie.
+  assert.equal(niveau(/^Inhoudelijke tegenstrijdigheid: Kamers/), 'aandacht');
+  assert.equal(o.meldingen.find((m: { titel: string }) => /^Inhoudelijke tegenstrijdigheid: Kamers/.test(m.titel)).actie, 'publicatie');
+  assert.match(o.meldingen.find((m: { titel: string }) => /^Inhoudelijke tegenstrijdigheid: Kamers/.test(m.titel)).tekst, /Het concept gebruikt '\d+' als onbevestigd/);
+  assert.equal(o.meldingen.find((m: { titel: string }) => /^Publicatierechten/.test(m.titel)).actie, 'conceptgeneratie');
   assert.equal(niveau(/^Mogelijke terminologische afwijking: Buitenruimte/), 'aandacht');
   assert.equal(niveau(/^Afwijking van de brochure: Straat/), 'aandacht');
   assert.equal(niveau(/^Publicatierechten/), 'blokkerend');

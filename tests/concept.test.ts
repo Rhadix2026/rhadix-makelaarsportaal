@@ -33,7 +33,7 @@ after(() => app.close());
 
 const req = (wie: string, method: 'GET' | 'POST' | 'PUT', url: string, payload?: object) => app.inject({ method, url, headers: { cookie: c[wie] }, payload });
 const st = async () => (await req('beheer', 'GET', `/api/projecten/${P}/beoordeling`)).json();
-const beslis = (o: string, d: object) => req('beheer', 'PUT', `/api/projecten/${P}/beslissingen/${o}`, d);
+const snel = (d: object) => req('beheer', 'POST', `/api/projecten/${P}/snelle-beoordeling`, d);
 const sha = (p: string) => createHash('sha256').update(readFileSync(p)).digest('hex');
 
 test('Markt 27: vrijgave met alleen de verplichte punten, concept v1, preview, verbeterpunten, v2', { skip: !existsSync(BROCHURE) && 'brochure niet lokaal', timeout: 600_000 }, async () => {
@@ -51,21 +51,33 @@ test('Markt 27: vrijgave met alleen de verplichte punten, concept v1, preview, v
   // Geen concept zonder vrijgave.
   assert.equal((await req('beheer', 'POST', `/api/projecten/${P}/concepten`)).statusCode, 409);
 
-  // Besluit 2: alleen de verplichte punten. Gegevens niet allemaal beoordeeld, terminologie open: blokkeert niet.
-  assert.equal((await req('beheer', 'PUT', `/api/projecten/${P}/gegevens/feit.kamers`, { actie: 'goedkeuren', bevestigd: true, motivering: 'Kenmerkentabel aangehouden' })).statusCode, 200);
-  await beslis('rechten', { bevestigd: true, motivering: 'Toestemming Linde' });
-  await beslis('profiel', { profiel: 'stads' });
-  await beslis('websiteadres', { conceptadres: true });
-  await beslis('openingsbeeld', { bestand_id: (await st()).beslissingen.openingsbeeld_voorstel });
-  await req('beheer', 'POST', `/api/projecten/${P}/kwaliteitscontrole`);
+  // Snelle beoordeling: zonder bronovername blokkeert de broncontrole; tegenstrijdigheden blokkeren het interne concept niet.
   let b = await st();
-  assert.equal(b.klaar, true, JSON.stringify(b.checklist.filter((x: { ok: boolean; verplicht: boolean }) => !x.ok && x.verplicht)));
-  for (const code of ['gegevens', 'terminologie', 'fotokwaliteit']) {
-    const x = b.checklist.find((y: { code: string }) => y.code === code);
-    assert.equal(x.ok, false, `${code} staat nog open`); assert.equal(x.verplicht, false, `${code} blokkeert niet`);
+  const punt = (x: typeof b, code: string) => x.checklist.find((y: { code: string }) => y.code === code);
+  assert.deepEqual([punt(b, 'bron').ok, punt(b, 'bron').verplicht], [false, true]);
+  assert.equal(punt(b, 'tegenstrijdigheden').verplicht, false, 'inhoudelijke tegenstrijdigheid blokkeert het interne concept niet');
+  const besluiten = async () => (await pool.query('SELECT count(*)::int AS n FROM besluit WHERE project_id = $1', [P])).rows[0].n;
+  const n0 = await besluiten();
+  assert.equal((await snel({ rechten: 'Toestemming Linde' })).statusCode, 400, 'zonder bevestiging van de overname');
+  assert.equal((await snel({ overnemen: true })).statusCode, 400, 'rechten zonder toelichting');
+  assert.equal(await besluiten(), n0, 'geweigerd: niets vastgelegd');
+  const s1 = await snel({ overnemen: true, rechten: 'Toestemming Linde' });
+  assert.equal(s1.statusCode, 200, s1.body);
+  assert.deepEqual(s1.json().open, []);
+  b = s1.json().beoordeling;
+  assert.equal(b.vrijgave.vrijgegeven, true, 'in één handeling vrijgegeven');
+  // Overnemen is geen verificatie: geen enkel gegeven is goedgekeurd.
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM gegeven WHERE project_id = $1 AND status = 'goedgekeurd'", [P])).rows[0].n, 0);
+  const ov = b.besluiten.find((x: { onderwerp: string }) => x.onderwerp === 'bronovername');
+  assert.equal(ov.handeling, 'overgenomen als uitgangspunt'); assert.ok(ov.door);
+  assert.match(ov.waarde.sha256, /^[0-9a-f]{64}$/, 'bronversie vastgelegd'); assert.match(ov.waarde.betekenis, /geen inhoudelijke bevestiging/);
+  assert.ok(ov.waarde.open_tegenstrijdigheden.includes('Kamers'));
+  for (const code of ['gegevens', 'tegenstrijdigheden', 'terminologie', 'fotokwaliteit']) {
+    assert.equal(punt(b, code).ok, false, `${code} staat nog open`); assert.equal(punt(b, code).verplicht, false, `${code} blokkeert niet`);
   }
+  for (const o of ['bronovername', 'rechten', 'profiel', 'websiteadres', 'openingsbeeld', 'vrijgave']) assert.ok(b.besluiten.some((x: { onderwerp: string }) => x.onderwerp === o), `besluit ${o} in het log`);
   assert.ok(b.kwaliteit.resultaat.info.some((x: { tekst: string }) => /vastgelegd als feit 'Bijdrage VvE'/.test(x.tekst)), 'VvE-bedrag als informatie');
-  assert.equal((await beslis('vrijgave', { motivering: 'Verplichte punten afgerond' })).statusCode, 200);
+  assert.equal(b.kwaliteit.indeling.samenvatting.length, 4);
 
   // Concept v1.
   const g1 = await req('beheer', 'POST', `/api/projecten/${P}/concepten`);
@@ -82,7 +94,18 @@ test('Markt 27: vrijgave met alleen de verplichte punten, concept v1, preview, v
   assert.ok(v1.bouw.onderdelen.includes('hero') || v1.bouw.onderdelen.some((x: string) => x.startsWith('hero')));
   assert.ok(v1.kwaliteit && Array.isArray(v1.kwaliteit.blokkerend) && v1.kwaliteit.meetwaarden.some((m: { criterium: string }) => /toegankelijkheid/.test(m.criterium)));
   assert.ok(v1.metingen.totaal.machine_ms > 0 && v1.metingen.conceptgeneratie.stappen.bouw > 0);
-  assert.equal(v1.metingen.totaal.binnen_ambitie, true, `machinetijd ${v1.metingen.totaal.machine_ms} ms`);
+  assert.equal(v1.metingen.totaal.binnen_ambitie_machine, true, `machinetijd ${v1.metingen.totaal.machine_ms} ms`);
+  // Drie afzonderlijke metingen; zonder geregistreerde interacties is de actieve tijd niet betrouwbaar en de ambitie niet vast te stellen.
+  assert.equal(v1.metingen.versie, 2);
+  assert.equal(v1.metingen.actief.totaal.betrouwbaar, false); assert.equal(v1.metingen.totaal.binnen_ambitie, null);
+  assert.ok(v1.metingen.kalender.ms >= v1.metingen.conceptgeneratie.totaal_ms);
+  // Uitgangspunten: bronovername en de open tegenstrijdigheid met de gebruikte waarde, als onbevestigd.
+  assert.ok(v1.uitgangspunten.bronovername?.sha256);
+  const kamers = v1.uitgangspunten.onzekerheden.find((o: { sleutel: string }) => o.sleutel === 'feit.kamers');
+  assert.equal(kamers.soort, 'tegenstrijdigheid'); assert.equal(kamers.verificatie, 'onbevestigd'); assert.ok(kamers.gebruikte_waarde);
+  const woning = JSON.parse(readFileSync(join(config.opslag, v1.map, 'aanlevering', 'woning.json'), 'utf8'));
+  assert.equal(woning.feiten.find((f: { sleutel: string }) => f.sleutel === 'kamers').verificatie, 'onbevestigd', 'niet als opgelost gemarkeerd');
+  assert.ok(v1.indeling.samenvatting.length === 4 && v1.indeling.meldingen.every((m: { actie: string }) => m.actie !== 'conceptgeneratie'));
   const site1 = join(config.opslag, v1.map, 'site', 'index.html');
   const html = readFileSync(site1, 'utf8');
   assert.match(html, /Markt 27/); assert.match(html, /linde-makelaars-markt-27\.invalid/);

@@ -29,7 +29,7 @@ test('statusroute geeft studio, database en generator', async () => {
   assert.match(s.studio.adres, /^127\.0\.0\.1:/);
   assert.equal(s.database.verbonden, true);
   assert.match(s.database.versie, /^16\./);
-  assert.deepEqual(s.database.migraties, ['001_basis.sql', '002_gebruikers_kantoren.sql', '003_woningprojecten.sql', '004_aanlevering.sql', '005_besluiten.sql', '006_beoordeling_vrijgave.sql', '007_concepten.sql']);
+  assert.deepEqual(s.database.migraties, ['001_basis.sql', '002_gebruikers_kantoren.sql', '003_woningprojecten.sql', '004_aanlevering.sql', '005_besluiten.sql', '006_beoordeling_vrijgave.sql', '007_concepten.sql', '008_overname_tijd.sql']);
 });
 
 test('productie-instantie staat op de vastgezette commit en is ongewijzigd', async () => {

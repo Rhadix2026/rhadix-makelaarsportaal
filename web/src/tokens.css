@@ -373,3 +373,17 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 .checklist li.aanbevolen .vink { background: var(--amber-licht); color: #92400e; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .fase-tekst .badge { white-space: normal; max-width: 100%; }
+/* Kwaliteitsmeldingen: samenvatting, categorieën en uitklapbare technische details */
+.meldoverzicht-kort { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 4px 0 10px; font-size: 14px; color: var(--tekst2); }
+.meldtabel td, .meldtabel th { padding: 8px 10px; }
+.meldoverzicht .meldingen li { margin-bottom: 8px; }
+.techniek { display: block; margin-top: 2px; font-size: 12px; color: var(--tekst3); }
+.techniek summary { cursor: pointer; font-weight: 400; display: inline; }
+.techniek .mono { display: block; overflow-wrap: anywhere; }
+/* Snelle beoordeling */
+.snel { border-color: var(--navy); }
+.snel-verklaring { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--rand); border-radius: var(--radius-lg); background: var(--achtergrond); font-weight: 600; }
+.snel-verklaring input { margin-top: 3px; width: 18px; height: 18px; flex: none; }
+.snel-velden { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 12px 0; }
+.snel-velden .veld { display: grid; gap: 4px; }
+@media (max-width: 600px) { .snel-velden { grid-template-columns: minmax(0, 1fr); } }

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react'
 import { api, ApiFout, upload, type Aanlevering as Data, type Bestand, type Ik, type Niveau } from './api.ts';
 import { Badge, Kaart, type Toon } from './onderdelen/basis.tsx';
 import { kortNaam } from './onderdelen/bestandsnaam.ts';
+import { useActiviteit } from './onderdelen/activiteit.ts';
 import { Fasebalk, useBeoordeling } from './Beoordeling.tsx';
 
 const CATEGORIE: Record<string, string> = { exterieur: 'Buitenzijde', entree: 'Entree', woonkamer: 'Woonkamer', keuken: 'Keuken', slaapkamer: 'Slaapkamer',
@@ -13,8 +14,8 @@ const SOORT_BEELD: Record<string, string> = { foto: "foto's", plattegrond: 'plat
   dubbel: 'dubbel in de PDF', kadaster: 'kadasterkaart', kaart: 'kaart', uitgesloten: 'uitgesloten', achtergrond: 'achtergrond', qr: 'QR-code', tekening: 'tekening', decor: 'decor' };
 
 const NIVEAU: Record<Niveau, { titel: string; uitleg: string }> = {
-  blokkerend: { titel: 'Blokkerend', uitleg: 'Moet opgelost zijn voordat er een website gegenereerd kan worden.' },
-  aandacht: { titel: 'Aandachtspunten', uitleg: 'Vragen een beoordeling door een mens.' },
+  blokkerend: { titel: 'Blokkeert de conceptgeneratie', uitleg: 'Moet opgelost zijn voordat er een eerste concept gemaakt kan worden.' },
+  aandacht: { titel: 'Vóór publicatie', uitleg: 'Blokkeert het interne concept niet; vraagt een menselijke beoordeling vóór publicatie.' },
   info: { titel: 'Ter informatie', uitleg: 'Geen handeling nodig.' },
 };
 
@@ -194,6 +195,7 @@ function Foto({ b, beheer, intrekken, naamVan, norm }: { b: Bestand; beheer: boo
 
 // ── Scherm ─────────────────────────────────────────────────────────────────
 export function AanleverScherm({ id, ik }: { id: string; ik: Ik }) {
+  useActiviteit(id, 'aanlevering');
   const [d, setD] = useState<Data | null>(null);
   const [fout, setFout] = useState<string | null>(null);
   const [melding, setMelding] = useState<{ toon: 'goed' | 'fout'; tekst: string } | null>(null);
