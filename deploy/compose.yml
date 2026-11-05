@@ -1,0 +1,97 @@
+# Rhadix Makelaarsportaal: online omgeving (één Compose-project per omgeving).
+#
+#   productie:  docker compose -p makelaarsportaal      --env-file /srv/makelaarsportaal/.env      -f compose.yml up -d
+#   test:       docker compose -p makelaarsportaal-test --env-file /srv/makelaarsportaal-test/.env -f compose.yml up -d
+#
+# Alle gegevens staan onder MP_DATA (database, opslag) op de server; het SigLIP-model alleen-lezen
+# onder MP_MODELLEN. Alleen de web-container publiceert een poort, en alleen op 127.0.0.1: de
+# host-nginx (met het Cloudflare-origincertificaat) stuurt het verkeer door.
+name: ${COMPOSE_PROJECT_NAME:-makelaarsportaal}
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "5" }
+
+x-app: &app
+  image: makelaarsportaal-app:${MP_TAG:?MP_TAG ontbreekt}
+  restart: unless-stopped
+  logging: *logging
+  depends_on:
+    db: { condition: service_healthy }
+  volumes:
+    - ${MP_DATA:?MP_DATA ontbreekt}/opslag:/srv/opslag
+    - ${MP_MODELLEN:?MP_MODELLEN ontbreekt}/hf:/opt/generator/.cache/ai/hf:ro
+  environment: &app-env
+    STUDIO_DB_URL: postgres://studio:${MP_DB_WACHTWOORD:?MP_DB_WACHTWOORD ontbreekt}@db:5432/studio
+    STUDIO_OMGEVING: ${MP_OMGEVING:-productie}
+    STUDIO_HERKOMST: ${MP_HERKOMST:?MP_HERKOMST ontbreekt}
+    STUDIO_COOKIE_SECURE: "1"
+    STUDIO_INACTIVITEIT_MIN: "5"
+    TZ: Europe/Amsterdam
+
+services:
+  db:
+    # Zelfde image als lokaal (postgres 16, vastgezet op digest; multi-arch).
+    image: postgres@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      POSTGRES_USER: studio
+      POSTGRES_DB: studio
+      POSTGRES_PASSWORD: ${MP_DB_WACHTWOORD:?MP_DB_WACHTWOORD ontbreekt}
+      TZ: Europe/Amsterdam
+    volumes:
+      - ${MP_DATA}/db:/var/lib/postgresql/data
+    networks: [intern]
+    mem_limit: 1g
+    cpus: 2
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U studio -d studio"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  api:
+    <<: *app
+    environment:
+      <<: *app-env
+      STUDIO_ROL: api
+    networks: [intern, web]
+    mem_limit: 1536m
+    cpus: 2
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8480/api/gezond"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  verwerker:
+    <<: *app
+    command: ["node_modules/.bin/tsx", "api/src/verwerker.ts"]
+    environment:
+      <<: *app-env
+      STUDIO_ROL: verwerker
+    # Alleen het interne netwerk: geen verbinding naar buiten (de generatie gebruikt geen externe bronnen).
+    networks: [intern]
+    # Beeldclassificatie ±4 GB plus importproces; generatie met Chromium ±2,7 GB. Eén verwerking tegelijk.
+    mem_limit: 6g
+    memswap_limit: 6g
+    cpus: 6
+    stop_grace_period: 3m
+
+  web:
+    image: makelaarsportaal-web:${MP_TAG}
+    restart: unless-stopped
+    logging: *logging
+    depends_on: [api]
+    networks: [web]
+    ports:
+      - "127.0.0.1:${MP_POORT:?MP_POORT ontbreekt}:8080"
+    mem_limit: 128m
+    cpus: 1
+
+networks:
+  intern:
+    internal: true
+  web: {}

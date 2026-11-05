@@ -51,13 +51,13 @@ export function bouwApp() {
   for (const type of ['application/pdf', 'application/octet-stream', /^image\//])
     app.addContentTypeParser(type, { parseAs: 'buffer', bodyLimit: 160 * 1024 * 1024 }, (_req, body, done) => done(null, body));
 
-  const toegestaneHerkomst = new Set([`http://127.0.0.1:${config.webPoort}`, `http://localhost:${config.webPoort}`]);
+  const toegestaneHerkomst = new Set([`http://127.0.0.1:${config.webPoort}`, `http://localhost:${config.webPoort}`, ...config.herkomst]);
 
   app.addHook('onRequest', async (req, reply) => {
     // Wijzigende verzoeken alleen vanaf de eigen interface (naast SameSite=Strict op het cookie).
     const origin = req.headers.origin;
     if (req.method !== 'GET' && origin && !toegestaneHerkomst.has(origin)) return reply.code(403).send({ fout: 'Onbekende herkomst' });
-    if (req.url === '/api/inloggen') return;
+    if (req.url === '/api/inloggen' || req.url === '/api/gezond') return;
     // Preview van een concept: toegang via het geheime voorbeeldtoken in het pad (alleen lezen).
     if (req.method === 'GET' && req.url.startsWith('/api/voorbeeld/')) return;
     const g = await sessieGebruiker(leesCookie(req.headers.cookie));
@@ -373,11 +373,16 @@ export function bouwApp() {
     return huisstijlAntwoord(reply, await alsGebruiker(req.gebruiker, (c) => bevestigVoorstel(c, req.gebruiker, req.params.id)));
   });
 
+  // Gezondheidscontrole voor de container en de beschikbaarheidsmeting: zonder sessie, zonder details.
+  app.get('/api/gezond', async (_req, reply) => {
+    try { await pool.query('SELECT 1'); return { ok: true }; } catch { return reply.code(503).send({ ok: false }); }
+  });
+
   // ── Systeembeheer (technische status; alleen platformbeheer) ────────────
   app.get('/api/status', { preHandler: alleenPlatform }, async () => {
     const [database, generator] = await Promise.all([databaseStatus(), generatorStatus()]);
     return {
-      studio: { versie: STUDIO_VERSIE, node: process.versions.node, omgeving: 'lokaal', adres: `${config.host}:${config.apiPoort}` },
+      studio: { versie: STUDIO_VERSIE, node: process.versions.node, omgeving: config.omgeving, rol: config.rol, adres: `${config.host}:${config.apiPoort}` },
       database,
       generator,
       tijd: new Date().toISOString(),
@@ -390,9 +395,10 @@ export function bouwApp() {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   await migreer();
-  await herstelVerwerkingen();
+  // Alleen het proces dat de wachtrij verwerkt, mag onderbroken verwerkingen afsluiten (online: de verwerker).
+  if (config.rol === 'alles') await herstelVerwerkingen();
   const app = bouwApp();
   await app.listen({ host: config.host, port: config.apiPoort });
-  console.log(`studio-API op http://${config.host}:${config.apiPoort}`);
+  console.log(`studio-API op http://${config.host}:${config.apiPoort} (${config.rol})`);
   void wekVerwerker();
 }

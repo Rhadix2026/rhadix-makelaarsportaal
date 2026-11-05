@@ -8,6 +8,7 @@
 import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { pool } from './db.ts';
+import { config } from './config.ts';
 
 const scrypt = promisify(scryptCb) as (w: string, s: Buffer, n: number, o: object) => Promise<Buffer>;
 
@@ -94,7 +95,8 @@ export function leesCookie(header: string | undefined, naam = COOKIE): string | 
   return undefined;
 }
 
-// HttpOnly + SameSite=Strict. Geen Secure: de studio draait in deze fase op http://127.0.0.1.
+// HttpOnly + SameSite=Strict. Secure alleen online (achter HTTPS); lokaal draait de studio op http://127.0.0.1.
+const secure = () => (config.cookieSecure ? '; Secure' : '');
 export const sessieCookie = (token: string) =>
-  `${COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSIEDUUR_MS / 1000}`;
-export const wisCookie = () => `${COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`;
+  `${COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSIEDUUR_MS / 1000}${secure()}`;
+export const wisCookie = () => `${COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secure()}`;

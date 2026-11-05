@@ -1,0 +1,11 @@
+# Rhadix Makelaarsportaal: webinterface (statische React-build) achter nginx.
+# nginx stuurt /api/ door naar de API-container; verder alleen statische bestanden.
+FROM node:24.22.0-bookworm-slim AS bouw
+COPY --from=studio . /opt/studio
+WORKDIR /opt/studio
+RUN npm ci --include=dev --no-audit --no-fund && npm run build
+
+FROM nginx:1.27-alpine
+COPY --from=studio deploy/nginx-web.conf /etc/nginx/conf.d/default.conf
+COPY --from=bouw /opt/studio/dist/web /usr/share/nginx/html
+EXPOSE 8080

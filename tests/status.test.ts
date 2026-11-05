@@ -58,3 +58,14 @@ test('onbekende routes geven 404 (na inloggen)', async () => {
   const r = await app.inject({ method: 'GET', url: '/api/bestaat-niet', headers: { cookie } });
   assert.equal(r.statusCode, 404);
 });
+
+test('gezondheidscontrole zonder sessie, zonder details; rol en omgeving in de status', async () => {
+  const r = await app.inject({ method: 'GET', url: '/api/gezond' });
+  assert.equal(r.statusCode, 200);
+  assert.deepEqual(r.json(), { ok: true });
+  const s = await status();
+  assert.equal(s.studio.omgeving, 'lokaal'); assert.equal(s.studio.rol, 'alles');
+  // Andere routes blijven achter de login; een vreemde herkomst mag niets wijzigen.
+  assert.equal((await app.inject({ method: 'GET', url: '/api/projecten' })).statusCode, 401);
+  assert.equal((await app.inject({ method: 'POST', url: '/api/uitloggen', headers: { cookie, origin: 'https://elders.invalid' } })).statusCode, 403);
+});

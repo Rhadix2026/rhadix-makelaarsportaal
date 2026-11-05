@@ -159,6 +159,8 @@ export async function verwerkVolgende(): Promise<boolean> {
 
 /** Start de verwerker als hij niet al draait; loopt door tot de wachtrij leeg is. */
 export function wekVerwerker() {
+  // Online verwerkt een aparte verwerker-container de wachtrij; de API zet alleen klaar.
+  if (config.rol === 'api') return Promise.resolve();
   if (actief) return actief;
   actief = (async () => { try { while (await verwerkVolgende()); } finally { actief = null; } })();
   return actief;

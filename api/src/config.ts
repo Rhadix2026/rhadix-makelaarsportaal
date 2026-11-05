@@ -22,7 +22,14 @@ const pad = (p: string) => resolve(p.replace(/^~(?=\/)/, homedir()));
 export const config = {
   dbUrl: env.STUDIO_DB_URL ?? '',
   generator: pad(env.STUDIO_GENERATOR ?? '~/Developer/makelaarsplatform-productie'),
-  host: '127.0.0.1',
+  // Luisteradres: lokaal altijd 127.0.0.1; in een container 0.0.0.0 (de poort wordt dan alleen op 127.0.0.1 van de host gepubliceerd).
+  host: env.STUDIO_HOST ?? '127.0.0.1',
+  // Online: de publieke herkomst (https://…) voor de herkomstcontrole, en het Secure-cookie achter HTTPS.
+  herkomst: (env.STUDIO_HERKOMST ?? '').split(',').map((h) => h.trim()).filter(Boolean),
+  cookieSecure: env.STUDIO_COOKIE_SECURE === '1',
+  omgeving: env.STUDIO_OMGEVING ?? 'lokaal',
+  // Rol van dit proces: 'alles' (lokaal: API en verwerker samen), 'api' of 'verwerker' (online: aparte containers).
+  rol: (['api', 'verwerker'].includes(env.STUDIO_ROL ?? '') ? env.STUDIO_ROL : 'alles') as 'alles' | 'api' | 'verwerker',
   apiPoort: Number(env.STUDIO_API_POORT ?? 8480),
   webPoort: Number(env.STUDIO_WEB_POORT ?? 5480),
   // Opslag van aangeleverde bestanden en importresultaten (klantgegevens; data/ staat niet in git).
