@@ -105,11 +105,22 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 
 /* tabel */
 .tabel { width: 100%; border-collapse: collapse; table-layout: fixed; }
-.tabel td, .tabel th { overflow-wrap: anywhere; }
+/* Labels (eerste kolom) breken nooit midden in een woord; waarden mogen afbreken (lange paden). */
+.tabel td, .tabel th { overflow-wrap: normal; word-break: normal; hyphens: manual; }
+.tabel td:last-child { overflow-wrap: anywhere; }
+/* Smal scherm: label boven de waarde, zodat labels nooit midden in een woord afbreken. */
+@media (max-width: 600px) {
+  .tabel, .tabel tbody, .tabel tr, .tabel td { display: block; width: auto; }
+  .tabel thead { display: none; }
+  .tabel tr { padding: 9px 0; border-bottom: 1px solid var(--rand); }
+  .tabel tr:last-child { border-bottom: 0; }
+  .tabel tr td, .tabel tr td:first-child { border: 0; padding: 0; width: auto; min-width: 0; }
+  .tabel tr td:first-child { font-size: 13px; margin-bottom: 2px; }
+}
 .tabel th { text-align: left; font-size: 13px; font-weight: 600; color: var(--tekst3); padding: 8px 0; border-bottom: 1px solid var(--rand); }
 .tabel td { padding: 9px 0; border-bottom: 1px solid var(--rand); vertical-align: top; color: var(--tekst2); }
 .tabel tr:last-child td { border-bottom: 0; }
-.tabel td:first-child { color: var(--tekst3); width: 38%; padding-right: 12px; }
+.tabel td:first-child { color: var(--tekst3); width: 40%; min-width: 9.5em; padding-right: 12px; }
 
 /* knoppen */
 .knop {
@@ -149,11 +160,14 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
   border-radius: var(--radius); padding: 6px 12px; font-size: 13px; font-weight: 600; cursor: pointer;
 }
 .nav-knop:hover { background: rgba(255,255,255,.18); }
-@media (max-width: 760px) { .nav-gebruiker { display: none; } .nav-links { margin-left: 12px; } }
+@media (max-width: 1180px) { .nav-gebruiker { display: none; } }
+@media (max-width: 760px) { .nav-links { margin-left: 12px; } }
 @media (max-width: 520px) {
   .nav-merk { display: none; }
   .nav-links { margin-left: 0; }
-  .nav-link { padding: 6px 10px; }
+  .nav { padding: 0 12px; }
+  .nav-link { padding: 6px 7px; font-size: 13px; }
+  .nav-knop { padding: 5px 8px; font-size: 12.5px; }
 }
 
 .formulier { display: grid; gap: 18px; }
@@ -191,3 +205,33 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 .leeg { padding: 32px 24px; text-align: center; color: var(--tekst3); font-size: 15px; }
 .terug { font-size: 14px; color: var(--tekst3); text-decoration: none; display: inline-block; margin-bottom: 12px; }
 .terug:hover { color: var(--navy); }
+
+/* ── Stap 3: dashboard en woningprojecten ────────────────────────────────── */
+.filters { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; margin-bottom: 16px; }
+.filters .veld { min-width: 200px; flex: 1 1 200px; }
+.filters .veld input, .filters .veld select { padding: 8px 10px; font-size: 14px; }
+.raster-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 960px) { .raster-5 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .raster-5 { grid-template-columns: 1fr 1fr; } }
+.stat-knop { text-align: left; cursor: pointer; font-family: var(--font); width: 100%; }
+.stat-knop:hover { border-color: var(--accent); }
+.stat-knop[aria-pressed="true"] { border-color: var(--navy); box-shadow: 0 0 0 1px var(--navy); }
+.voortgang { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.voortgang li { display: grid; grid-template-columns: 28px 1fr; gap: 12px; align-items: start; padding: 10px 0; border-bottom: 1px solid var(--rand); }
+.voortgang li:last-child { border-bottom: 0; }
+.stip { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 700; border: 2px solid var(--rand2); color: var(--tekst3); background: #fff; }
+.stip-klaar { background: var(--groen); border-color: var(--groen); color: #fff; }
+.stip-nu { border-color: var(--navy); color: var(--navy); }
+.voortgang .stap-naam { font-size: 14px; font-weight: 600; color: var(--tekst2); }
+.voortgang .stap-uitleg { font-size: 13px; color: var(--tekst3); margin-top: 2px; }
+.balk { height: 8px; background: var(--rand); border-radius: 4px; overflow: hidden; }
+.balk > div { height: 100%; background: var(--navy); border-radius: 4px; }
+.profielkeuze { display: grid; gap: 8px; }
+.profielkeuze label { display: grid; grid-template-columns: 20px 1fr; gap: 10px; align-items: start; padding: 10px 12px; border: 1px solid var(--rand2); border-radius: var(--radius); cursor: pointer; font-weight: 400; }
+.profielkeuze input { margin-top: 3px; width: auto; }
+.profielkeuze label:has(input:checked) { border-color: var(--navy); box-shadow: 0 0 0 1px var(--navy); }
+.profielkeuze .profielnaam { font-weight: 700; color: var(--tekst); }
+.profielkeuze .profieluitleg { font-size: 13px; color: var(--tekst3); }
+
+.tabel a { color: var(--navy); font-weight: 600; text-decoration: none; }
+.tabel a:hover { text-decoration: underline; }

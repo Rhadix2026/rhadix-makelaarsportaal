@@ -8,7 +8,7 @@ vaste commit.
 **Ontwerp en stappenplan:** `~/Developer/ONTWERP-PRODUCTIESTUDIO-1.0-2026-11-05/` (document 11:
 stappenplan MVP 1).
 
-**Status:** stap 2 (inloggen en makelaarskantoren). Alleen lokaal (`127.0.0.1`), geen deployments.
+**Status:** stap 3 (dashboard en woningprojecten). Alleen lokaal (`127.0.0.1`), geen deployments.
 
 ## Onderdelen
 
@@ -54,10 +54,35 @@ npm run gebruiker -- lijst
 npm run gebruiker -- deactiveer --email <adres>     # sessies worden direct beëindigd
 ```
 
+## Woningprojecten
+
+- **Koppeling:** elk project hoort bij precies één kantoor. Projecten vallen onder dezelfde
+  RLS-scheiding: platformbeheer ziet alles, andere gebruikers alleen de projecten van hun eigen
+  kantoren.
+- **Korte naam (slug):**
+  - wordt `<kantoor>-<woning>` en ligt vast na het aanmaken (straks de mapnaam in de
+    productie-instantie);
+  - de namen van de referentiewoningen en de voorvoegsels `kalibratie-`, `import-` en `probe-`
+    worden geweigerd, ook in de database zelf.
+- **Ontwerpsysteem:** de standaardversie van de generator, vastgezet bij het aanmaken.
+- **Kantoorinstellingen zijn standaardwaarden:** het standaardprofiel van het kantoor wordt bij
+  het aanmaken gekopieerd. Een keuze per woning verandert het kantoor niet, en een latere
+  kantoorwijziging verandert bestaande projecten niet.
+- **Kantoor wijzigen** kan alleen zolang de aanlevering nog niet begonnen is.
+- **Statussen** volgen FO 2.0 §4. In deze stap is elke nieuwe woning `aanlevering_incompleet`;
+  statusovergangen komen met de aanlevering en de generatie.
+
 ## Tests
 
-`npm test` maakt bij elk testbestand een verse database `studio_test` in de studio-container. De
-tests weigeren te draaien tegen een andere database.
+- `npm test` maakt bij elk testbestand een verse database `studio_test` in de studio-container.
+- **Borging in drie lagen:**
+  - de configuratie weigert onder de testrunner (`NODE_TEST_CONTEXT`) of met `STUDIO_TEST=1`
+    elke andere database dan `studio_test`;
+  - `tests/hulp.ts` controleert de verbonden database;
+  - `tests/borging.test.ts` toetst beide.
+- **Regressie** (`tests/borging.test.ts`): de generator en de productie-instantie staan op de
+  vaste commit met een schone werkmap, en de referentiemanifesten en de goedgekeurde concepten
+  zijn byte-gelijk.
 
 ## Gescheiden van Rhadix
 

@@ -17,3 +17,4 @@ await c.end();
 
 const test = new URL(basis); test.pathname = '/studio_test';
 process.env.STUDIO_DB_URL = test.toString();
+process.env.STUDIO_TEST = '1';

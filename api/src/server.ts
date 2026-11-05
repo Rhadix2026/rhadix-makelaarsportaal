@@ -7,9 +7,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { config, ROOT } from './config.ts';
 import { alsGebruiker, databaseStatus, migreer, pool } from './db.ts';
-import { generatorStatus, profielen } from './generator.ts';
+import { generatorStatus, profielCatalogus, profielen, standaardOntwerpsysteem } from './generator.ts';
 import { COOKIE, beeindigSessie, leesCookie, meldAan, sessieCookie, sessieGebruiker, wisCookie } from './auth.ts';
 import { leesKantoor, lijstKantoren, maakKantoor, valideerKantoor, wijzigKantoor } from './kantoren.ts';
+import { leesProject, lijstProjecten, maakProject, STATUSSEN, telling, valideerProject, wijzigProject, WONINGTYPEN } from './projecten.ts';
 
 const STUDIO_VERSIE = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version as string;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -21,8 +22,8 @@ type Ik = { id: string; email: string; naam: string; platformbeheer: boolean; ka
 async function ik(gebruiker: string): Promise<Ik> {
   return alsGebruiker(gebruiker, async (c) => {
     const g = (await c.query('SELECT id, email, naam, platformrol FROM gebruiker WHERE id = $1', [gebruiker])).rows[0];
-    const k = (await c.query(`SELECT k.id, k.naam, l.rol FROM lidmaatschap l JOIN kantoor k ON k.id = l.kantoor_id
-      WHERE l.gebruiker_id = $1 ORDER BY lower(k.naam)`, [gebruiker])).rows;
+    const k = (await c.query(`SELECT k.id, k.merknaam AS naam, l.rol FROM lidmaatschap l JOIN kantoor k ON k.id = l.kantoor_id
+      WHERE l.gebruiker_id = $1 ORDER BY lower(k.merknaam)`, [gebruiker])).rows;
     return { id: g.id, email: g.email, naam: g.naam, platformbeheer: g.platformrol === 'platformbeheer', kantoren: k };
   });
 }
@@ -104,7 +105,49 @@ export function bouwApp() {
     } catch (e) { return dbFout(e, reply); }
   });
 
-  app.get('/api/catalogus/profielen', async () => ({ profielen: await profielen() }));
+  // ── Catalogus: keuzelijsten uit de generator en het projectmodel ────────
+  app.get('/api/catalogus/profielen', async () => ({ profielen: await profielen(), details: await profielCatalogus() }));
+  app.get('/api/catalogus/project', async () => ({
+    woningtypen: WONINGTYPEN, statussen: STATUSSEN.map(([waarde, label]) => ({ waarde, label })),
+    profielen: await profielCatalogus(), ontwerpsysteem: await standaardOntwerpsysteem(),
+  }));
+
+  // ── Woningprojecten ─────────────────────────────────────────────────────
+  app.get<{ Querystring: { kantoor?: string; status?: string; zoek?: string } }>('/api/projecten', async (req) =>
+    alsGebruiker(req.gebruiker, async (c) => ({ projecten: await lijstProjecten(c, req.query), telling: await telling(c) })));
+
+  app.get<{ Params: { id: string } }>('/api/projecten/:id', async (req, reply) => {
+    const p = await alsGebruiker(req.gebruiker, (c) => leesProject(c, req.params.id));
+    return p ?? reply.code(404).send({ fout: 'Woningproject niet gevonden' });
+  });
+
+  const projectFout = (reply: FastifyReply, fout: string) => ({
+    kantoor: () => reply.code(400).send({ fout: 'Controleer de invoer', fouten: { kantoor_id: 'Kantoor niet gevonden' } }),
+    inactief: () => reply.code(400).send({ fout: 'Controleer de invoer', fouten: { kantoor_id: 'Dit kantoor is inactief' } }),
+    gereserveerd: () => reply.code(400).send({ fout: 'Controleer de invoer', fouten: { slug: 'Deze korte naam is gereserveerd' } }),
+    kantoor_vast: () => reply.code(409).send({ fout: 'Het kantoor kan niet meer wijzigen: de aanlevering is al begonnen', fouten: { kantoor_id: 'Vast na de start van de aanlevering' } }),
+    onbekend: () => reply.code(404).send({ fout: 'Woningproject niet gevonden' }),
+    geweigerd: () => reply.code(403).send({ fout: 'Geen rechten voor deze handeling' }),
+  } as Record<string, () => FastifyReply>)[fout]();
+
+  app.post<{ Body: Record<string, unknown> }>('/api/projecten', { preHandler: alleenPlatform }, async (req, reply) => {
+    const v = valideerProject(req.body ?? {}, await profielen());
+    if (!v.ok) return reply.code(400).send({ fout: 'Controleer de invoer', fouten: v.fouten });
+    const ds = await standaardOntwerpsysteem();
+    try {
+      const r = await alsGebruiker(req.gebruiker, (c) => maakProject(c, req.gebruiker, v.project, ds));
+      return 'fout' in r ? projectFout(reply, r.fout!) : reply.code(201).send(r.project);
+    } catch (e) { return dbFout(e, reply); }
+  });
+
+  app.put<{ Params: { id: string }; Body: Record<string, unknown> }>('/api/projecten/:id', { preHandler: alleenPlatform }, async (req, reply) => {
+    const v = valideerProject(req.body ?? {}, await profielen());
+    if (!v.ok) return reply.code(400).send({ fout: 'Controleer de invoer', fouten: v.fouten });
+    try {
+      const r = await alsGebruiker(req.gebruiker, (c) => wijzigProject(c, req.gebruiker, req.params.id, v.project));
+      return 'fout' in r ? projectFout(reply, r.fout!) : r.project;
+    } catch (e) { return dbFout(e, reply); }
+  });
 
   // ── Systeembeheer (technische status; alleen platformbeheer) ────────────
   app.get('/api/status', { preHandler: alleenPlatform }, async () => {

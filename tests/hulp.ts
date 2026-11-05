@@ -21,7 +21,7 @@ export async function maakGebruiker(email: string, o: { platform?: boolean; kant
 }
 
 export async function maakKantoorDirect(naam: string, slug: string) {
-  return (await pool.query('INSERT INTO kantoor (naam, slug) VALUES ($1, $2) RETURNING id', [naam, slug])).rows[0].id as string;
+  return (await pool.query('INSERT INTO kantoor (merknaam, slug) VALUES ($1, $2) RETURNING id', [naam, slug])).rows[0].id as string;
 }
 
 /** Logt in en geeft het cookie terug voor volgende verzoeken. */

@@ -6,11 +6,12 @@ import { Navigatie, Pagina } from './onderdelen/basis.tsx';
 import { Inloggen } from './Inloggen.tsx';
 import { KantoorDetail, KantoorFormulier, KantorenLijst } from './Kantoren.tsx';
 import { StatusPagina } from './Status.tsx';
+import { Dashboard, ProjectDetail, ProjectFormulier } from './Projecten.tsx';
 
 function useHash() {
-  const [hash, setHash] = useState(location.hash || '#/kantoren');
+  const [hash, setHash] = useState(location.hash || '#/projecten');
   useEffect(() => {
-    const f = () => setHash(location.hash || '#/kantoren');
+    const f = () => setHash(location.hash || '#/projecten');
     addEventListener('hashchange', f);
     return () => removeEventListener('hashchange', f);
   }, []);
@@ -23,7 +24,11 @@ function Scherm({ hash, ik }: { hash: string; ik: Ik }) {
   if (hash === '#/kantoren/nieuw') return ik.platformbeheer ? <KantoorFormulier /> : <p className="melding melding-fout">Alleen voor platformbeheer.</p>;
   if ((m = hash.match(/^#\/kantoren\/([0-9a-f-]{36})\/bewerken$/))) return <KantoorFormulier id={m[1]} />;
   if ((m = hash.match(/^#\/kantoren\/([0-9a-f-]{36})$/))) return <KantoorDetail id={m[1]} ik={ik} />;
-  return <KantorenLijst ik={ik} />;
+  if (hash.startsWith('#/kantoren')) return <KantorenLijst ik={ik} />;
+  if (hash === '#/projecten/nieuw') return ik.platformbeheer ? <ProjectFormulier /> : <p className="melding melding-fout">Alleen voor platformbeheer.</p>;
+  if ((m = hash.match(/^#\/projecten\/([0-9a-f-]{36})\/bewerken$/))) return <ProjectFormulier id={m[1]} />;
+  if ((m = hash.match(/^#\/projecten\/([0-9a-f-]{36})$/))) return <ProjectDetail id={m[1]} ik={ik} />;
+  return <Dashboard ik={ik} />;
 }
 
 function App() {
@@ -46,6 +51,7 @@ function App() {
     <>
       <Navigatie
         links={<>
+          <a className="nav-link" href="#/projecten" aria-current={actief('#/projecten')}>Woningprojecten</a>
           <a className="nav-link" href="#/kantoren" aria-current={actief('#/kantoren')}>Kantoren</a>
           {ik.platformbeheer && <a className="nav-link" href="#/systeem" aria-current={actief('#/systeem')}>Systeem</a>}
         </>}

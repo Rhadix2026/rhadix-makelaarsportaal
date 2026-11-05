@@ -22,6 +22,20 @@ export async function profielen(): Promise<string[]> {
     .filter((f) => f.endsWith('.json')).map((f) => f.replace(/\.json$/, '')).sort();
 }
 
+/** Profielen met hun omschrijving, rechtstreeks uit de profielbestanden van de generator. */
+export async function profielCatalogus(): Promise<{ naam: string; omschrijving: string }[]> {
+  return (await profielen()).map((naam) => {
+    const p = JSON.parse(readFileSync(join(G, 'packages', 'tokens', 'profielen', `${naam}.json`), 'utf8'));
+    return { naam, omschrijving: String(p.omschrijving ?? '').replace(/\s*\(zie docs\/[^)]*\)/, '') };
+  });
+}
+
+/** De standaard-ontwerpsysteemversie voor nieuwe woningen, uit de generator (versies.mjs). */
+export async function standaardOntwerpsysteem(): Promise<string> {
+  const { standaardVersie } = await importeer('packages/tokens/versies.mjs');
+  return standaardVersie();
+}
+
 export async function generatorStatus() {
   if (!existsSync(join(G, 'tools', 'mp.mjs'))) return { gevonden: false, pad: G };
 

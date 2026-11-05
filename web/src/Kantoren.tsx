@@ -2,6 +2,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { api, ApiFout, type Ik, type Kantoor } from './api.ts';
 import { Badge, Kaart, PaginaTitel } from './onderdelen/basis.tsx';
+import { ProfielKeuze } from './onderdelen/ProfielKeuze.tsx';
 
 const ROL: Record<string, string> = { makelaar: 'Makelaar', kantoorbeheerder: 'Kantoorbeheerder' };
 
@@ -30,8 +31,8 @@ export function KantorenLijst({ ik }: { ik: Ik }) {
                   <tr key={k.id}>
                     <td>
                       {k.merkkleur && <><span className="kleurstaal" style={{ background: k.merkkleur }} aria-hidden="true" />{' '}</>}
-                      <a href={`#/kantoren/${k.id}`}>{k.naam}</a>
-                      {k.adresregels.length > 0 && <div className="stat-sub">{k.adresregels.join(', ')}</div>}
+                      <a href={`#/kantoren/${k.id}`}>{k.merknaam}</a>
+                      {k.juridische_naam && <div className="stat-sub">{k.juridische_naam}</div>}
                     </td>
                     <td>{k.telefoon ?? (k.email ? null : '—')}{k.email && <div className={k.telefoon ? 'stat-sub' : undefined}>{k.email}</div>}</td>
                     <td>{k.standaard_profiel ?? '—'}</td>
@@ -55,6 +56,8 @@ export function KantoorDetail({ id, ik }: { id: string; ik: Ik }) {
   if (fout) return <><a className="terug" href="#/kantoren">← Kantoren</a><p className="melding melding-fout" role="alert">{fout}</p></>;
   if (!k) return null;
   const rijen: [string, ReactNode][] = [
+    ['Merknaam (publiek)', k.merknaam],
+    ['Juridische naam', k.juridische_naam ?? '—'],
     ['Korte naam', <span className="mono">{k.slug}</span>],
     ['Telefoon', k.telefoon ?? '—'],
     ['E-mail', k.email ?? '—'],
@@ -68,7 +71,7 @@ export function KantoorDetail({ id, ik }: { id: string; ik: Ik }) {
     <>
       <a className="terug" href="#/kantoren">← Kantoren</a>
       <div className="rij" style={{ alignItems: 'flex-start' }}>
-        <PaginaTitel badge="Makelaarskantoor" titel={k.naam} />
+        <PaginaTitel badge="Makelaarskantoor" titel={k.merknaam} sub={k.juridische_naam ? `Juridische naam: ${k.juridische_naam}` : undefined} />
         {ik.platformbeheer && <a className="knop knop-lijn" href={`#/kantoren/${k.id}/bewerken`} style={{ textDecoration: 'none' }}>Bewerken</a>}
       </div>
       <div className="raster raster-2">
@@ -87,19 +90,19 @@ export function KantoorDetail({ id, ik }: { id: string; ik: Ik }) {
   );
 }
 
-const LEEG = { naam: '', slug: '', telefoon: '', email: '', website: '', adres: '', standaard_profiel: '', merkkleur: '', status: 'actief' };
+const LEEG = { merknaam: '', juridische_naam: '', slug: '', telefoon: '', email: '', website: '', adres: '', standaard_profiel: '', merkkleur: '', status: 'actief' };
 
 export function KantoorFormulier({ id }: { id?: string }) {
   const [w, setW] = useState(LEEG);
-  const [profielen, setProfielen] = useState<string[]>([]);
+  const [profielen, setProfielen] = useState<{ naam: string; omschrijving: string }[]>([]);
   const [fouten, setFouten] = useState<Record<string, string>>({});
   const [melding, setMelding] = useState<string | null>(null);
   const [bezig, setBezig] = useState(false);
 
   useEffect(() => {
-    api<{ profielen: string[] }>('/api/catalogus/profielen').then((r) => setProfielen(r.profielen));
+    api<{ details: { naam: string; omschrijving: string }[] }>('/api/catalogus/profielen').then((r) => setProfielen(r.details));
     if (id) api<Kantoor>(`/api/kantoren/${id}`).then((k) => setW({
-      naam: k.naam, slug: k.slug, telefoon: k.telefoon ?? '', email: k.email ?? '', website: k.website ?? '',
+      merknaam: k.merknaam, juridische_naam: k.juridische_naam ?? '', slug: k.slug, telefoon: k.telefoon ?? '', email: k.email ?? '', website: k.website ?? '',
       adres: k.adresregels.join('\n'), standaard_profiel: k.standaard_profiel ?? '', merkkleur: k.merkkleur ?? '', status: k.status,
     }), (e) => setMelding(e.message));
   }, [id]);
@@ -135,18 +138,17 @@ export function KantoorFormulier({ id }: { id?: string }) {
       <form className="kaart formulier" onSubmit={verstuur} noValidate>
         {melding && <p className="melding melding-fout" role="alert">{melding}</p>}
         <div className="formulier-raster">
-          {veld('naam', 'Naam *', <input id="naam" value={w.naam} onChange={zet('naam')} required />)}
+          {veld('merknaam', 'Merknaam (publiek) *', <input id="merknaam" value={w.merknaam} onChange={zet('merknaam')} required />, 'Zoals het kantoor zich presenteert, op de woningwebsites.')}
+          {veld('juridische_naam', 'Juridische naam', <input id="juridische_naam" value={w.juridische_naam} onChange={zet('juridische_naam')} />, 'Statutaire naam of naam in het handelsregister, bijvoorbeeld met B.V.')}
           {veld('slug', 'Korte naam', <input id="slug" value={w.slug} onChange={zet('slug')} placeholder="automatisch uit de naam" />, 'Kleine letters, cijfers en koppeltekens; wordt gebruikt in woningnamen.')}
           {veld('telefoon', 'Telefoon', <input id="telefoon" type="tel" value={w.telefoon} onChange={zet('telefoon')} />)}
           {veld('email', 'E-mail', <input id="email" type="email" value={w.email} onChange={zet('email')} />)}
           {veld('website', 'Website', <input id="website" type="url" value={w.website} onChange={zet('website')} placeholder="https://" />)}
           {veld('adres', 'Adres', <textarea id="adres" value={w.adres} onChange={zet('adres')} />, 'Eén regel per adresregel, hooguit vier.')}
           {veld('standaard_profiel', 'Standaardprofiel', (
-            <select id="standaard_profiel" value={w.standaard_profiel} onChange={zet('standaard_profiel')}>
-              <option value="">Nog niet gekozen</option>
-              {profielen.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
-          ), 'Profielen van de generator (Apple-inspired Experience).')}
+            <ProfielKeuze id="standaard_profiel" waarde={w.standaard_profiel} profielen={profielen}
+              onChange={(v) => setW({ ...w, standaard_profiel: v })} leegLabel="Nog niet gekozen" leegUitleg="Per woning kiezen." />
+          ), 'Presentatieprofielen van de generator (Apple-inspired Experience). Nieuwe woningen van dit kantoor nemen dit profiel over.')}
           {veld('merkkleur', 'Merkkleur', (
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <input id="merkkleur" value={w.merkkleur} onChange={zet('merkkleur')} placeholder="#1A2847" style={{ flex: 1 }} />

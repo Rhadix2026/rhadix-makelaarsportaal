@@ -28,3 +28,14 @@ Gemeten uitvoering per stap, als basis voor latere inschattingen (stappenplan §
 | Tests | 37 (5 status, 11 authenticatie, 13 gegevensscheiding (API + RLS), 8 kantoren), alle groen; typecheck schoon; build in 0,06 s |
 | Visuele controle | Een tijdelijke demo-instantie (database `studio_demo`, poorten 5481/8481, alleen `.invalid`-gegevens) met Chromium doorlopen: inloggen, een fout wachtwoord, de lijst, een nieuw kantoor met invoerfouten, detail, systeem, uitloggen, de makelaarsweergave en mobiel (390 px, geen horizontaal scrollen). 0 consolefouten. Daarna verwijderd |
 | Externe afhankelijkheden | Geen nieuwe |
+
+## Stap 3: dashboard en woningprojecten (05-11-2026)
+
+| Meting | Waarde |
+|---|---|
+| Start (akkoord ontvangen) | 2026-11-05 14:52:02 UTC |
+| Oplevering | 2026-11-05 15:00 UTC |
+| Iteraties | 3 opmaakrondes, gevonden met schermafdrukken en een automatische labelcontrole op 390, 768, 1024 en 1440 px. (1) De navigatie liep op mobiel 15 px over de rand en de gebruikersnaam brak af bij 1024 px. (2) **Labels braken midden in een woord** (verbeterpunt 1), door `overflow-wrap: anywhere`. Opgelost: labels breken niet meer; op smalle schermen staat het label boven de waarde. (3) Een dubbele rand door de cascadevolgorde. Geen functionele fouten: de tests slaagden in één keer |
+| Tests | 57 (+20): woningprojecten 15, borging en regressie 6; de bestaande 36 aangepast op merknaam en juridische naam. Daarnaast 81 generatortests groen in de productie-instantie |
+| Migratie | `003_woningprojecten.sql` op de echte studio-database: de kantoornaam wordt merknaam (gecontroleerd: gegevens behouden) |
+| Verbeterpunten stap 2 | 1 labels: opgelost. 2 merknaam en juridische naam: opgelost. 3 alleen geldige profielen: keuze met omschrijving uit de generator, en een melding bij een ongeldige opgeslagen waarde. 4 logo en huisstijl: gepland bij stap 4 (uploads). 5 kantoor als standaard: opgelost en getest. 6 alleen een testdatabase: drievoudig geborgd en getest |

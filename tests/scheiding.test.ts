@@ -22,7 +22,7 @@ before(async () => {
 after(() => app.close());
 
 const get = (wie: string, url: string) => app.inject({ method: 'GET', url, headers: { cookie: c[wie] } });
-const namen = async (wie: string) => (await get(wie, '/api/kantoren')).json().map((k: { naam: string }) => k.naam);
+const namen = async (wie: string) => (await get(wie, '/api/kantoren')).json().map((k: { merknaam: string }) => k.merknaam);
 
 test('platformbeheer ziet alle kantoren', async () => {
   assert.deepEqual(await namen('beheer'), ['Kantoor A', 'Kantoor B']);
@@ -44,11 +44,11 @@ test('een ander kantoor opvragen geeft 404 (bestaan wordt niet verraden)', async
 });
 
 test('een makelaar kan geen kantoor aanmaken of wijzigen, ook niet het eigen kantoor', async () => {
-  const nieuw = await app.inject({ method: 'POST', url: '/api/kantoren', headers: { cookie: c.a }, payload: { naam: 'Eigen kantoor' } });
+  const nieuw = await app.inject({ method: 'POST', url: '/api/kantoren', headers: { cookie: c.a }, payload: { merknaam: 'Eigen kantoor' } });
   assert.equal(nieuw.statusCode, 403);
-  const eigen = await app.inject({ method: 'PUT', url: `/api/kantoren/${A}`, headers: { cookie: c.a }, payload: { naam: 'Gewijzigd' } });
+  const eigen = await app.inject({ method: 'PUT', url: `/api/kantoren/${A}`, headers: { cookie: c.a }, payload: { merknaam: 'Gewijzigd' } });
   assert.equal(eigen.statusCode, 403);
-  const ander = await app.inject({ method: 'PUT', url: `/api/kantoren/${B}`, headers: { cookie: c.b }, payload: { naam: 'Gewijzigd' } });
+  const ander = await app.inject({ method: 'PUT', url: `/api/kantoren/${B}`, headers: { cookie: c.b }, payload: { merknaam: 'Gewijzigd' } });
   assert.equal(ander.statusCode, 403, 'ook een kantoorbeheerder wijzigt in de eerste fase niets');
   assert.deepEqual(await namen('beheer'), ['Kantoor A', 'Kantoor B'], 'niets veranderd');
 });
@@ -65,9 +65,9 @@ test('de lijst met kantoorleden toont een makelaar alleen zichzelf', async () =>
 
 // ── Rechtstreeks in de database: de scheiding hangt niet af van de API ──────
 test('RLS: onder studio_app ziet een makelaar alleen het eigen kantoor, ook met een vrije query', async () => {
-  const r = await alsGebruiker(makelaarA, (cl) => cl.query('SELECT naam FROM kantoor ORDER BY naam'));
+  const r = await alsGebruiker(makelaarA, (cl) => cl.query('SELECT merknaam AS naam FROM kantoor ORDER BY merknaam'));
   assert.deepEqual(r.rows.map((x) => x.naam), ['Kantoor A']);
-  const via = await alsGebruiker(makelaarA, (cl) => cl.query('SELECT naam FROM kantoor WHERE id = $1', [B]));
+  const via = await alsGebruiker(makelaarA, (cl) => cl.query('SELECT merknaam FROM kantoor WHERE id = $1', [B]));
   assert.equal(via.rowCount, 0);
 });
 
@@ -82,8 +82,8 @@ test('RLS: zonder ingelogde gebruiker ziet studio_app niets', async () => {
 });
 
 test('RLS: een makelaar kan in de database niet schrijven (insert, update, delete)', async () => {
-  await assert.rejects(alsGebruiker(makelaarA, (cl) => cl.query("INSERT INTO kantoor (naam, slug) VALUES ('X', 'x')")), /row-level security/);
-  const upd = await alsGebruiker(makelaarA, (cl) => cl.query("UPDATE kantoor SET naam = 'X' WHERE id = $1", [A]));
+  await assert.rejects(alsGebruiker(makelaarA, (cl) => cl.query("INSERT INTO kantoor (merknaam, slug) VALUES ('X', 'x')")), /row-level security/);
+  const upd = await alsGebruiker(makelaarA, (cl) => cl.query("UPDATE kantoor SET merknaam = 'X' WHERE id = $1", [A]));
   assert.equal(upd.rowCount, 0);
   const del = await alsGebruiker(makelaarA, (cl) => cl.query('DELETE FROM kantoor WHERE id = $1', [A]));
   assert.equal(del.rowCount, 0);
@@ -105,6 +105,6 @@ test('RLS: alleen platformbeheer leest de audit', async () => {
 });
 
 test('RLS: platformbeheer ziet alles via dezelfde rol', async () => {
-  const r = await alsGebruiker(beheer, (cl) => cl.query('SELECT naam FROM kantoor ORDER BY naam'));
+  const r = await alsGebruiker(beheer, (cl) => cl.query('SELECT merknaam AS naam FROM kantoor ORDER BY merknaam'));
   assert.deepEqual(r.rows.map((x) => x.naam), ['Kantoor A', 'Kantoor B']);
 });
