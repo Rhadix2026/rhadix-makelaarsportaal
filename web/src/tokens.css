@@ -20,7 +20,7 @@
   --tekst: #111827;
   --tekst2: #374151;
   --tekst3: #6b7280;
-  --tekst4: #9ca3af;
+  /* --tekst4 (#9ca3af) bewust niet overgenomen: te weinig contrast voor tekst op wit */
   --achtergrond: #f3f4f6;
   --vlak: #ffffff;
   --rand: #e5e7eb;
@@ -50,7 +50,7 @@ body {
 }
 button { font-family: var(--font); }
 h1, h2, h3, p { margin: 0; }
-code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
 
 /* navigatie */
 .nav {
@@ -74,7 +74,7 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 .titel { margin-bottom: 28px; }
 .titel-badge {
   display: inline-flex; background: var(--blauw-licht); color: var(--navy);
-  font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 20px; margin-bottom: 12px;
+  font-size: 13px; font-weight: 600; padding: 4px 12px; border-radius: 20px; margin-bottom: 12px;
 }
 .titel h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 6px; }
 .titel p { font-size: 14px; color: var(--tekst3); line-height: 1.5; }
@@ -92,21 +92,21 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 .kaart h2 { font-size: 15px; font-weight: 700; margin-bottom: 14px; }
 .stat-waarde { font-size: 28px; font-weight: 800; letter-spacing: -0.03em; margin-bottom: 4px; }
 .stat-label { font-size: 13px; color: var(--tekst3); }
-.stat-sub { font-size: 12px; color: var(--tekst4); margin-top: 6px; }
+.stat-sub { font-size: 13px; color: var(--tekst3); margin-top: 6px; }
 
 /* badges */
-.badge { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 20px; white-space: nowrap; display: inline-block; }
+.badge { font-size: 13px; font-weight: 600; padding: 3px 10px; border-radius: 20px; white-space: nowrap; display: inline-block; }
 .badge-goed { background: var(--groen-licht); color: var(--groen); }
 .badge-let-op { background: var(--amber-licht); color: var(--amber); }
 .badge-fout { background: var(--rood-licht); color: var(--rood); }
 .badge-info { background: var(--blauw-licht); color: var(--navy); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip { font-size: 12px; padding: 3px 9px; border-radius: 6px; background: var(--achtergrond); border: 1px solid var(--rand); color: var(--tekst2); }
+.chip { font-size: 13px; padding: 3px 9px; border-radius: 6px; background: var(--achtergrond); border: 1px solid var(--rand); color: var(--tekst2); }
 
 /* tabel */
 .tabel { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .tabel td, .tabel th { overflow-wrap: anywhere; }
-.tabel th { text-align: left; font-size: 12px; font-weight: 600; color: var(--tekst3); padding: 8px 0; border-bottom: 1px solid var(--rand); }
+.tabel th { text-align: left; font-size: 13px; font-weight: 600; color: var(--tekst3); padding: 8px 0; border-bottom: 1px solid var(--rand); }
 .tabel td { padding: 9px 0; border-bottom: 1px solid var(--rand); vertical-align: top; color: var(--tekst2); }
 .tabel tr:last-child td { border-bottom: 0; }
 .tabel td:first-child { color: var(--tekst3); width: 38%; padding-right: 12px; }
@@ -133,3 +133,61 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 .melding { padding: 12px 16px; border-radius: var(--radius); font-size: 14px; }
 .melding-fout { background: var(--rood-licht); color: #991b1b; }
 .voet { margin-top: 28px; font-size: 13px; color: var(--tekst3); }
+
+/* ── Stap 2: navigatie, formulieren, inloggen, lijsten ───────────────────── */
+.nav-links { display: flex; gap: 4px; margin-left: 28px; }
+.nav-link {
+  color: #fff; opacity: .78; text-decoration: none; font-size: 14px; font-weight: 600;
+  padding: 8px 12px; border-radius: var(--radius);
+}
+.nav-link:hover { opacity: 1; background: rgba(255,255,255,.08); }
+.nav-link[aria-current="page"] { opacity: 1; background: rgba(255,255,255,.12); }
+.nav-links-groep { display: flex; align-items: center; }
+.nav-gebruiker { font-size: 14px; color: var(--sub); }
+.nav-knop {
+  background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2); color: #fff;
+  border-radius: var(--radius); padding: 6px 12px; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.nav-knop:hover { background: rgba(255,255,255,.18); }
+@media (max-width: 760px) { .nav-gebruiker { display: none; } .nav-links { margin-left: 12px; } }
+@media (max-width: 520px) {
+  .nav-merk { display: none; }
+  .nav-links { margin-left: 0; }
+  .nav-link { padding: 6px 10px; }
+}
+
+.formulier { display: grid; gap: 18px; }
+.formulier-raster { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 20px; align-items: start; }
+@media (max-width: 760px) { .formulier-raster { grid-template-columns: 1fr; } }
+.veld { display: grid; gap: 6px; }
+.veld label { font-size: 14px; font-weight: 600; color: var(--tekst2); }
+.veld .hint { font-size: 13px; color: var(--tekst3); }
+.veld input, .veld select, .veld textarea {
+  font-family: var(--font); font-size: 15px; color: var(--tekst);
+  padding: 10px 12px; border: 1px solid var(--rand2); border-radius: var(--radius); background: #fff; width: 100%;
+}
+.veld textarea { min-height: 76px; resize: vertical; }
+.veld input:focus, .veld select:focus, .veld textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+.veld-fout input, .veld-fout select, .veld-fout textarea { border-color: var(--rood); }
+.veld .fout { font-size: 13px; color: #b91c1c; font-weight: 500; }
+.knoppen { display: flex; gap: 10px; flex-wrap: wrap; }
+.knop:disabled { opacity: .6; cursor: not-allowed; }
+.melding-goed { background: var(--groen-licht); color: #166534; }
+.kleurstaal { display: inline-block; width: 18px; height: 18px; border-radius: 4px; border: 1px solid var(--rand2); vertical-align: middle; }
+
+.inlog-achtergrond { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; background: var(--navy); }
+.inlog-kaart { width: 100%; max-width: 400px; background: #fff; border-radius: var(--radius-lg); padding: 32px; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+.inlog-kaart h1 { font-size: 24px; font-weight: 800; margin-bottom: 4px; }
+.inlog-kaart .ondertitel { font-size: 14px; color: var(--tekst3); margin-bottom: 24px; }
+.inlog-merk { font-size: 14px; font-weight: 700; letter-spacing: .03em; color: var(--navy); margin-bottom: 18px; }
+
+.lijst { width: 100%; border-collapse: collapse; }
+.lijst th { text-align: left; font-size: 13px; font-weight: 600; color: var(--tekst3); padding: 10px 12px; border-bottom: 1px solid var(--rand); background: #fafafa; }
+.lijst td { padding: 14px 12px; border-bottom: 1px solid var(--rand); font-size: 14px; color: var(--tekst2); vertical-align: middle; }
+.lijst tr:last-child td { border-bottom: 0; }
+.lijst a { color: var(--navy); font-weight: 700; text-decoration: none; }
+.lijst a:hover { text-decoration: underline; }
+.lijst-kaart { padding: 0; overflow-x: auto; }
+.leeg { padding: 32px 24px; text-align: center; color: var(--tekst3); font-size: 15px; }
+.terug { font-size: 14px; color: var(--tekst3); text-decoration: none; display: inline-block; margin-bottom: 12px; }
+.terug:hover { color: var(--navy); }

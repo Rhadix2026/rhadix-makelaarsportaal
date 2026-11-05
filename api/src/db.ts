@@ -36,6 +36,31 @@ export async function migreer(): Promise<string[]> {
   } finally { c.release(); }
 }
 
+/**
+ * Voert fn uit in één transactie onder de rol studio_app, met de ingelogde gebruiker in
+ * app.gebruiker. Alle gegevensscheiding (RLS) hangt hieraan: elke gebruikersvraag loopt hierlangs.
+ */
+export async function alsGebruiker<T>(gebruikerId: string, fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
+  const c = await pool.connect();
+  try {
+    await c.query('BEGIN');
+    await c.query('SET LOCAL ROLE studio_app');
+    await c.query("SELECT set_config('app.gebruiker', $1, true)", [gebruikerId]);
+    const r = await fn(c);
+    await c.query('COMMIT');
+    return r;
+  } catch (e) {
+    await c.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally { c.release(); }
+}
+
+/** Legt een wijziging vast in de audit, binnen dezelfde transactie als de wijziging. */
+export async function audit(c: pg.PoolClient, r: { gebruiker: string; actie: string; tabel: string; id?: string; oud?: unknown; nieuw?: unknown }) {
+  await c.query('INSERT INTO auditregel (gebruiker_id, actie, tabel, rij_id, oud, nieuw) VALUES ($1, $2, $3, $4, $5, $6)',
+    [r.gebruiker, r.actie, r.tabel, r.id ?? null, r.oud === undefined ? null : JSON.stringify(r.oud), r.nieuw === undefined ? null : JSON.stringify(r.nieuw)]);
+}
+
 export async function databaseStatus() {
   try {
     const v = await pool.query("SELECT current_setting('server_version') AS versie");

@@ -16,6 +16,12 @@ const G = config.generator;
 const importeer = (rel: string) => import(pathToFileURL(join(G, rel)).href);
 const git = (...args: string[]) => execFileSync('git', ['-C', G, ...args], { encoding: 'utf8' }).trim();
 
+/** De stijlprofielen van de generator (packages/tokens/profielen); de studio kopieert ze niet. */
+export async function profielen(): Promise<string[]> {
+  return readdirSync(join(G, 'packages', 'tokens', 'profielen'))
+    .filter((f) => f.endsWith('.json')).map((f) => f.replace(/\.json$/, '')).sort();
+}
+
 export async function generatorStatus() {
   if (!existsSync(join(G, 'tools', 'mp.mjs'))) return { gevonden: false, pad: G };
 
@@ -26,9 +32,6 @@ export async function generatorStatus() {
   const opdrachten = [...mp.matchAll(/opdracht === '([a-z-]+)'/g)].map((m) => m[1]);
 
   const { VERSIES, standaardVersie } = await importeer('packages/tokens/versies.mjs');
-  const profielen = readdirSync(join(G, 'packages', 'tokens', 'profielen'))
-    .filter((f) => f.endsWith('.json')).map((f) => f.replace(/\.json$/, '')).sort();
-
   const { SIGLIP } = await importeer('packages/ai/siglip.mjs');
   const siglip = SIGLIP.beschikbaar() as { ok: boolean; ontbreekt: string[] };
 
@@ -46,7 +49,7 @@ export async function generatorStatus() {
       versies: Object.entries(VERSIES as Record<string, { status: string; omschrijving?: string }>)
         .map(([v, x]) => ({ versie: v, status: x.status, omschrijving: x.omschrijving ?? null })),
     },
-    profielen,
+    profielen: await profielen(),
     beeldclassificatie: { beschikbaar: siglip.ok, model: SIGLIP.model as string, ontbreekt: siglip.ontbreekt },
     chromium: chromiumStatus(),
   };

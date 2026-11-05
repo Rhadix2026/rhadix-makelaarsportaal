@@ -1,12 +1,15 @@
 // Basiscomponenten in de Rhadix-look-and-feel (opnieuw vastgelegd, zie tokens.css).
 import type { ReactNode } from 'react';
 
-export function Navigatie({ rechts }: { rechts?: ReactNode }) {
+export function Navigatie({ links, rechts }: { links?: ReactNode; rechts?: ReactNode }) {
   return (
     <header className="nav">
-      <div className="nav-merk">
-        <span className="nav-naam">Makelaarsplatform</span>
-        <span className="nav-sub">Productiestudio</span>
+      <div className="nav-links-groep">
+        <div className="nav-merk">
+          <span className="nav-naam">Makelaarsplatform</span>
+          <span className="nav-sub">Productiestudio</span>
+        </div>
+        {links && <nav className="nav-links" aria-label="Hoofdmenu">{links}</nav>}
       </div>
       <div className="nav-rechts">{rechts}</div>
     </header>

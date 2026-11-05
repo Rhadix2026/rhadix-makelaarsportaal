@@ -40,8 +40,8 @@ export function StatusPagina() {
   return (
     <>
       <div className="rij" style={{ alignItems: 'flex-start' }}>
-        <PaginaTitel badge="Stap 1 · Status" titel="Productiestudio"
-          sub="Controleert of de studio, de database en de productie-instantie van de bestaande generator klaarstaan. Er wordt niets gestart of gewijzigd." />
+        <PaginaTitel badge="Systeembeheer" titel="Systeemstatus"
+          sub="Technische status van de studio, de database en de productie-instantie van de bestaande generator. Alleen voor platformbeheer; er wordt niets gestart of gewijzigd." />
         <KnopLijn onClick={laad} disabled={bezig}>{bezig ? 'Bezig…' : 'Opnieuw controleren'}</KnopLijn>
       </div>
 
@@ -101,12 +101,12 @@ export function StatusPagina() {
               ]} />
             </Kaart>
 
-            <Kaart titel="Volgende stappen">
+            <Kaart titel="Gegevensscheiding">
               <Gegevens rijen={[
-                ['Stap 2', 'Inloggen en kantoren'],
-                ['Stap 3', 'Woningproject aanmaken'],
-                ['Stap 4–5', 'Aanleveren en broncontrole'],
-                ['Stap 6–7', 'Concept genereren en preview'],
+                ['Databaserol voor gebruikers', <span className="mono">studio_app</span>],
+                ['Row Level Security', 'kantoor, lidmaatschap, gebruiker, audit'],
+                ['Platformbeheer', 'ziet alle kantoren'],
+                ['Overige gebruikers', 'alleen eigen kantoren'],
               ]} />
             </Kaart>
           </div>
