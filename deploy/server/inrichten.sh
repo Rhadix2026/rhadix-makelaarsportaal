@@ -60,7 +60,8 @@ SSH
 sshd -t && systemctl reload ssh
 
 # Host-firewall (aanvullend op de Hetzner Cloud Firewall, die 443 alleen voor Cloudflare opent).
-ufw default deny incoming && ufw default allow outgoing && ufw allow 22/tcp comment ssh && ufw allow 443/tcp && ufw --force enable
+ufw default deny incoming && ufw default allow outgoing && ufw allow 22/tcp comment ssh && ufw --force enable
+bash "$HIER"/cloudflare-ufw.sh   # 443 alleen voor Cloudflare
 
 # Scripts en systemd-timers (worden pas actief na 'systemctl enable --now …', zie LEESMIJ).
 install -m 750 "$HIER"/back-up.sh "$HIER"/hersteltest.sh "$HIER"/meting.sh /usr/local/sbin/
