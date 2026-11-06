@@ -13,6 +13,8 @@ const MAP = join(ROOT, 'db', 'migraties');
 export async function migreer(): Promise<string[]> {
   const c = await pool.connect();
   try {
+    // Online starten API en verwerker tegelijk: één tegelijk migreren (sessieslot, vrij bij release).
+    await c.query('SELECT pg_advisory_lock(7480901)');
     await c.query(`CREATE TABLE IF NOT EXISTS schema_migratie (
       naam text PRIMARY KEY, sha256 text NOT NULL, toegepast_op timestamptz NOT NULL DEFAULT now())`);
     const gedaan = new Map((await c.query('SELECT naam, sha256 FROM schema_migratie')).rows.map((r) => [r.naam, r.sha256]));
@@ -33,7 +35,10 @@ export async function migreer(): Promise<string[]> {
       nieuw.push(naam);
     }
     return nieuw;
-  } finally { c.release(); }
+  } finally {
+    await c.query('SELECT pg_advisory_unlock(7480901)').catch(() => {});
+    c.release();
+  }
 }
 
 /**

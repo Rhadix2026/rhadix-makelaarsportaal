@@ -37,7 +37,8 @@ DC="docker compose -p $OMG --env-file .env -f compose.yml"
 # Vóór elke uitrol een databasedump (migraties gaan alleen vooruit; terugzetten kan hiermee).
 if $DC ps --status running --services 2>/dev/null | grep -qx db; then
   install -d -m 700 /srv/$OMG/voor-uitrol
-  $DC exec -T db pg_dump -U studio -d studio -Fc > "/srv/$OMG/voor-uitrol/$OMG-$(date +%Y%m%d-%H%M)-voor-$TAG.dump"
+  # </dev/null: anders leest 'exec' de rest van dit script (stdin van ssh) en stopt de uitrol na de dump.
+  $DC exec -T db pg_dump -U studio -d studio -Fc < /dev/null > "/srv/$OMG/voor-uitrol/$OMG-$(date +%Y%m%d-%H%M)-voor-$TAG.dump"
   ls -1t /srv/$OMG/voor-uitrol/$OMG-*.dump | tail -n +11 | xargs -r rm -f   # de laatste 10 bewaren
 fi
 $DC up -d --remove-orphans
