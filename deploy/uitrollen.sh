@@ -3,8 +3,9 @@
 #
 #   deploy/uitrollen.sh <server> <omgeving> [tag]     omgeving: makelaarsportaal | makelaarsportaal-test
 #
-# - De images gaan rechtstreeks van deze Mac naar de server (docker save | ssh docker load): geen
-#   openbaar register en geen registertoken op de server. Alleen lagen die er nog niet zijn kosten tijd.
+# - Staan de images al op de server (BOUW_SERVER in bouw-images.sh), dan worden die gebruikt. Anders
+#   gaan ze van deze Mac naar de server (docker save | ssh docker load), na een architectuurcontrole.
+#   Geen openbaar register en geen registertoken op de server.
 # - Op de server: compose.yml naar /srv/<omgeving>/, MP_TAG in .env bijgewerkt, 'up -d', daarna de
 #   gezondheidscontrole. Mislukt die, dan gaat de vorige tag terug (de vorige images blijven staan).
 # - Raakt geen andere servers of containers. De .env met geheimen staat al op de server (zie LEESMIJ).
@@ -15,11 +16,15 @@ OMG="${2:?omgeving: makelaarsportaal of makelaarsportaal-test}"
 TAG="${3:-$(git rev-parse --short HEAD)}"
 case "$OMG" in makelaarsportaal) POORT=8580 ;; makelaarsportaal-test) POORT=8581 ;; *) echo "onbekende omgeving"; exit 1 ;; esac
 
-docker image inspect "makelaarsportaal-app:$TAG" "makelaarsportaal-web:$TAG" >/dev/null || { echo "images $TAG ontbreken: eerst deploy/bouw-images.sh"; exit 1; }
-[ "$(docker image inspect -f '{{.Architecture}}' "makelaarsportaal-app:$TAG")" = arm64 ] || { echo "image is niet arm64"; exit 1; }
-
-echo "== images naar $SERVER ($TAG)"
-docker save "makelaarsportaal-app:$TAG" "makelaarsportaal-web:$TAG" | gzip -1 | ssh "$SERVER" 'gunzip | docker load'
+SERVER_ARCH=$(ssh "$SERVER" dpkg --print-architecture)
+if ssh "$SERVER" docker image inspect "makelaarsportaal-app:$TAG" "makelaarsportaal-web:$TAG" >/dev/null 2>&1; then
+  echo "== images $TAG staan al op $SERVER (op de server gebouwd)"
+else
+  docker image inspect "makelaarsportaal-app:$TAG" "makelaarsportaal-web:$TAG" >/dev/null || { echo "images $TAG ontbreken: eerst deploy/bouw-images.sh"; exit 1; }
+  [ "$(docker image inspect -f '{{.Architecture}}' "makelaarsportaal-app:$TAG")" = "$SERVER_ARCH" ] || { echo "image is niet $SERVER_ARCH (architectuur van de server)"; exit 1; }
+  echo "== images naar $SERVER ($TAG)"
+  docker save "makelaarsportaal-app:$TAG" "makelaarsportaal-web:$TAG" | gzip -1 | ssh "$SERVER" 'gunzip | docker load'
+fi
 scp -q deploy/compose.yml "$SERVER:/srv/$OMG/compose.yml"
 
 echo "== uitrollen $OMG"

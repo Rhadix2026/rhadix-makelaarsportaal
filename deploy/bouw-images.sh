@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
-# Bouwt de images van het makelaarsportaal (app en web) voor linux/arm64 (of PLATFORM=linux/amd64).
+# Bouwt de images van het makelaarsportaal (app en web).
 #
-#   deploy/bouw-images.sh [tag]        standaardtag: de korte commit van de studio
+#   deploy/bouw-images.sh [tag]                          lokaal, voor linux/arm64 (of PLATFORM=linux/amd64)
+#   BOUW_SERVER=portaal@<ip> deploy/bouw-images.sh [tag] op de server zelf, voor de eigen architectuur
+#                                                        (geen emulatie, geen upload van het image van ±3,8 GB)
+#   standaardtag: de korte commit van de studio
 #
 # - Studio: alleen gecommitte code (git archive van HEAD): nooit data/, .env of een werkmap.
 # - Generator: een git-kloon van de productie-instantie op de vaste commit (VERWACHTE_COMMIT in
 #   api/src/generator.ts), zonder .cache (modellen, Chromium); Chromium komt via Playwright in het
 #   image, het SigLIP-model wordt op de server gekoppeld.
-# De images blijven lokaal (docker save / load naar de server); geen openbaar register.
+# Geen openbaar register: lokaal gebouwd gaat het image met docker save / load naar de server
+# (deploy/uitrollen.sh); op de server gebouwd blijft het daar. Naar de server gaat alleen de
+# broncode (studio en generator); de bouwmap daar wordt na afloop verwijderd.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -27,7 +32,22 @@ git archive HEAD | tar -x -C "$WERK/studio"
 git clone --quiet --no-local "$GENERATOR_BRON" "$WERK/generator"
 git -C "$WERK/generator" checkout --quiet --detach "$COMMIT"
 git -C "$WERK/generator" remote remove origin
-echo "studio $(git rev-parse --short HEAD), generator $(git -C "$WERK/generator" rev-parse --short HEAD), platform $PLATFORM, tag $TAG"
+echo "studio $(git rev-parse --short HEAD), generator $(git -C "$WERK/generator" rev-parse --short HEAD), ${BOUW_SERVER:+server $BOUW_SERVER, }platform ${BOUW_SERVER:+van de server}${BOUW_SERVER:-$PLATFORM}, tag $TAG"
+
+if [ -n "${BOUW_SERVER:-}" ]; then
+  echo "== bouwen op $BOUW_SERVER (eigen architectuur)"
+  tar -C "$WERK" -czf - studio generator | ssh "$BOUW_SERVER" 'rm -rf ~/mp-bouw && mkdir -p ~/mp-bouw && tar -xzf - -C ~/mp-bouw'
+  ssh "$BOUW_SERVER" bash -s -- "$TAG" <<'OP_SERVER'
+set -euo pipefail
+TAG=$1; B=~/mp-bouw; trap 'rm -rf "$B"' EXIT
+docker buildx build --load --build-context studio="$B/studio" --build-context generator="$B/generator" \
+  -f "$B/studio/deploy/Dockerfile.app" -t "makelaarsportaal-app:$TAG" "$B/studio"
+docker buildx build --load --build-context studio="$B/studio" \
+  -f "$B/studio/deploy/Dockerfile.web" -t "makelaarsportaal-web:$TAG" "$B/studio"
+docker image ls --format '{{.Repository}}:{{.Tag}}  {{.Size}}' | grep "makelaarsportaal-.*:$TAG"
+OP_SERVER
+  exit 0
+fi
 
 docker buildx build --platform "$PLATFORM" --load \
   --build-context studio="$WERK/studio" --build-context generator="$WERK/generator" \
