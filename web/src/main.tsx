@@ -47,7 +47,18 @@ function App() {
     addEventListener('studio:uitgelogd', f);
     return () => removeEventListener('studio:uitgelogd', f);
   }, []);
-  const uitloggen = useCallback(async () => { await api('/api/uitloggen', { methode: 'POST' }).catch(() => {}); setIk(null); }, []);
+  const uitloggen = useCallback(async () => {
+    await api('/api/uitloggen', { methode: 'POST' }).catch(() => {});
+    // Aangemeld via Rhadix: centraal uitloggen (wist het Rhadix-cookie en gaat terug naar het platform).
+    if (ik?.bron === 'rhadix' && ik.uitloggen) { location.href = ik.uitloggen; return; }
+    setIk(null);
+  }, [ik]);
+  // Huisstijl van de eigen organisatie uit Rhadix in de interface (kleuren als CSS-variabelen).
+  useEffect(() => {
+    const h = ik?.huisstijl, s = document.documentElement.style;
+    if (h?.primair) s.setProperty('--navy', h.primair); else s.removeProperty('--navy');
+    if (h?.accent) s.setProperty('--accent', h.accent); else s.removeProperty('--accent');
+  }, [ik]);
 
   if (ik === undefined) return null;
   if (ik === null) return <Inloggen ingelogd={setIk} />;
@@ -56,6 +67,7 @@ function App() {
   return (
     <>
       <Navigatie
+        woordmerk={ik.huisstijl?.woordmerk} logo={ik.huisstijl?.logo}
         links={<>
           <a className="nav-link" href="#/projecten" aria-current={actief('#/projecten')}>Woningprojecten</a>
           <a className="nav-link" href="#/kantoren" aria-current={actief('#/kantoren')}>Kantoren</a>

@@ -61,6 +61,7 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
   box-shadow: 0 2px 12px rgba(0,0,0,.25); color: #fff;
 }
 .nav-merk { display: flex; align-items: baseline; gap: 12px; }
+.nav-logo { height: 26px; width: auto; align-self: center; }
 .nav-naam { font-size: 18px; font-weight: 800; letter-spacing: .02em; }
 .nav-sub { font-size: 13px; color: var(--sub); font-weight: 500; }
 .nav-rechts { display: flex; align-items: center; gap: 12px; }

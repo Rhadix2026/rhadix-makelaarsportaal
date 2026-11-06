@@ -27,6 +27,13 @@ x-app: &app
     STUDIO_HERKOMST: ${MP_HERKOMST:?MP_HERKOMST ontbreekt}
     STUDIO_COOKIE_SECURE: ${MP_COOKIE_SECURE:-1}
     STUDIO_INACTIVITEIT_MIN: "5"
+    # Centrale Rhadix-login: alleen de PUBLIEKE sleutel van het platform (test: Datavalidatie staging).
+    STUDIO_SSO_SLEUTEL: ${MP_SSO_SLEUTEL:-}
+    STUDIO_SSO_PLATFORM: ${MP_SSO_PLATFORM:-}
+    STUDIO_SSO_COOKIE: ${MP_SSO_COOKIE:-rhadix_sso}
+    STUDIO_SSO_APP: ${MP_SSO_APP:-rhadix-makelaarsportaal}
+    # Eigen login online alleen als noodtoegang via een SSH-tunnel (zie LEESMIJ).
+    STUDIO_LOKALE_LOGIN: ${MP_LOKALE_LOGIN:-tunnel}
     TZ: Europe/Amsterdam
 
 services:

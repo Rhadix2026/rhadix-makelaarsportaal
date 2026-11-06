@@ -16,12 +16,24 @@ export async function api<T>(pad: string, opties: { methode?: string; data?: unk
   return body as T;
 }
 
-export type Ik = { id: string; email: string; naam: string; platformbeheer: boolean; kantoren: { id: string; naam: string; rol: string }[] };
+export type Ik = {
+  id: string; email: string; naam: string; platformbeheer: boolean; kantoren: { id: string; naam: string; rol: string }[];
+  /** 'rhadix': aangemeld via de centrale Rhadix-login; 'lokaal': de eigen noodtoegang. */
+  bron: 'rhadix' | 'lokaal';
+  /** Huisstijl van de eigen organisatie uit Rhadix (alleen bij bron 'rhadix'). */
+  huisstijl?: { primair: string | null; accent: string | null; woordmerk: string | null; logo: string | null } | null;
+  /** Centrale uitgang van het Rhadix-platform. */
+  uitloggen?: string | null;
+};
+
+export type InlogOpties = { rhadix: string | null; lokaal: boolean; melding: string | null };
+
+export type RhadixOrganisatie = { tenant_id: string; naam: string; laatst_gezien: string; kantoor_id: string | null; kantoor: string | null };
 
 export type Kantoor = {
   id: string; merknaam: string; juridische_naam: string | null; slug: string; telefoon: string | null; email: string | null; website: string | null;
   adresregels: string[]; standaard_profiel: string | null; merkkleur: string | null; detailkleur: string | null; status: 'actief' | 'inactief';
-  huisstijl_herkomst: 'handmatig' | 'logo' | null; logo_id: string | null;
+  huisstijl_herkomst: 'handmatig' | 'logo' | null; logo_id: string | null; rhadix_tenant_id: string | null;
   aangemaakt_op: string; gewijzigd_op: string; gebruikers?: number;
   leden?: { id: string; naam: string; email: string; rol: string }[];
 };

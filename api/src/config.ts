@@ -38,7 +38,27 @@ export const config = {
   classificatie: env.STUDIO_CLASSIFICATIE !== 'uit',
   // Inactiviteitsgrens voor de actieve gebruikerstijd: een langere pauze tussen twee interacties telt niet mee.
   inactiviteitMs: Math.max(1, Number(env.STUDIO_INACTIVITEIT_MIN ?? 5)) * 60e3,
+  // Centrale Rhadix-login (Datavalidatie als identity provider). Zonder sleutel staat de koppeling uit.
+  // Alleen de PUBLIEKE sleutel: het portaal kan tokens controleren, nooit uitgeven.
+  sso: {
+    sleutel: leesSleutel(env.STUDIO_SSO_SLEUTEL),
+    uitgever: env.STUDIO_SSO_UITGEVER ?? 'suresync-id',
+    cookie: env.STUDIO_SSO_COOKIE ?? 'rhadix_sso',
+    app: env.STUDIO_SSO_APP ?? 'rhadix-makelaarsportaal',
+    // Het Rhadix-platform (inloggen en centraal uitloggen), bijvoorbeeld https://app-staging.rhadix.nl
+    platform: (env.STUDIO_SSO_PLATFORM ?? '').replace(/\/+$/, ''),
+  },
+  // Eigen wachtwoordlogin: 'aan' (lokale studio), 'tunnel' (online: alleen via een SSH-tunnel naar
+  // 127.0.0.1, als noodtoegang wanneer Rhadix niet bereikbaar is) of 'uit'.
+  lokaleLogin: (['tunnel', 'uit'].includes(env.STUDIO_LOKALE_LOGIN ?? '') ? env.STUDIO_LOKALE_LOGIN : 'aan') as 'aan' | 'tunnel' | 'uit',
 };
+
+/** PEM rechtstreeks, met \n als regelscheiding (één regel in .env), of base64 van de PEM. */
+function leesSleutel(v: string | undefined): string | null {
+  if (!v?.trim()) return null;
+  const s = v.trim().replace(/\\n/g, '\n');
+  return s.includes('BEGIN') ? s : Buffer.from(s, 'base64').toString('utf8');
+}
 
 if (!config.dbUrl) throw new Error('STUDIO_DB_URL ontbreekt (zie .env.voorbeeld)');
 

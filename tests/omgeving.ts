@@ -27,3 +27,13 @@ process.env.STUDIO_OPSLAG = opslag;
 process.on('exit', () => rmSync(opslag, { recursive: true, force: true }));
 // De beeldclassificatie (SigLIP, ±4 GB) draait niet in de geautomatiseerde tests; wel in de praktijktest.
 process.env.STUDIO_CLASSIFICATIE ??= 'uit';
+// Centrale Rhadix-login in de tests: een TIJDELIJK sleutelpaar, per testrun nieuw gemaakt. Nooit een
+// sleutel van Rhadix; de privésleutel bestaat alleen in dit testproces (tests/hulp.ts tekent ermee).
+{
+  const { generateKeyPairSync } = await import('node:crypto');
+  const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+  process.env.STUDIO_SSO_SLEUTEL = publicKey.export({ type: 'spki', format: 'pem' }).toString();
+  process.env.TEST_SSO_PRIVE = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+  process.env.STUDIO_SSO_PLATFORM = 'https://platform.rhadix.invalid';
+  process.env.STUDIO_SSO_COOKIE = 'rhadix_sso_test';
+}

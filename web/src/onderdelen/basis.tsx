@@ -1,13 +1,14 @@
 // Basiscomponenten in de Rhadix-look-and-feel (opnieuw vastgelegd, zie tokens.css).
 import type { ReactNode } from 'react';
 
-export function Navigatie({ links, rechts }: { links?: ReactNode; rechts?: ReactNode }) {
+export function Navigatie({ links, rechts, woordmerk, logo }: { links?: ReactNode; rechts?: ReactNode; woordmerk?: string | null; logo?: string | null }) {
   return (
     <header className="nav">
       <div className="nav-links-groep">
         <div className="nav-merk">
-          <span className="nav-naam">Makelaarsplatform</span>
-          <span className="nav-sub">Productiestudio</span>
+          {logo && <img className="nav-logo" src={logo} alt="" onError={(e) => { e.currentTarget.hidden = true; }} />}
+          <span className="nav-naam">{woordmerk || 'Rhadix'}</span>
+          <span className="nav-sub">Makelaarsportaal</span>
         </div>
         {links && <nav className="nav-links" aria-label="Hoofdmenu">{links}</nav>}
       </div>

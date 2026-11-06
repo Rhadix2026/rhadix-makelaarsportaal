@@ -45,7 +45,7 @@ export function valideerKantoor(b: Record<string, unknown>, profielen: string[])
   return { ok: true, kantoor: { merknaam: merknaam!, juridische_naam, slug: slug!, telefoon, email, website, adresregels, standaard_profiel, merkkleur: merkkleur?.toUpperCase() ?? null, detailkleur: detailkleur?.toUpperCase() ?? null, status } };
 }
 
-const VELDEN = 'id, merknaam, juridische_naam, slug, telefoon, email, website, adresregels, standaard_profiel, merkkleur, detailkleur, huisstijl_herkomst, logo_id, status, aangemaakt_op, gewijzigd_op';
+const VELDEN = 'id, merknaam, juridische_naam, slug, telefoon, email, website, adresregels, standaard_profiel, merkkleur, detailkleur, huisstijl_herkomst, logo_id, status, rhadix_tenant_id, aangemaakt_op, gewijzigd_op';
 
 export async function lijstKantoren(c: pg.PoolClient) {
   return (await c.query(`SELECT ${VELDEN}, (SELECT count(*)::int FROM lidmaatschap l WHERE l.kantoor_id = k.id) AS gebruikers

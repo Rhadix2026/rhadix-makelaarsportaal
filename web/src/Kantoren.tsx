@@ -1,6 +1,6 @@
 // Makelaarskantoren: lijst, detail en formulier (aanmaken en wijzigen door platformbeheer).
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { api, ApiFout, upload, type Huisstijl, type Ik, type Kantoor } from './api.ts';
+import { api, ApiFout, upload, type Huisstijl, type Ik, type Kantoor, type RhadixOrganisatie } from './api.ts';
 import { Badge, Kaart, PaginaTitel } from './onderdelen/basis.tsx';
 import { ProfielKeuze } from './onderdelen/ProfielKeuze.tsx';
 import { kortNaam } from './onderdelen/bestandsnaam.ts';
@@ -86,8 +86,46 @@ export function KantoorDetail({ id, ik }: { id: string; ik: Ik }) {
           ) : <p className="stat-sub" style={{ marginTop: 0 }}>Nog geen gebruikers. In de eerste fase beheert het platform alle kantoren; gebruikers per kantoor volgen later.</p>}
         </Kaart>
       </div>
+      {ik.platformbeheer && <RhadixKoppeling kantoor={k} gewijzigd={(t) => setK({ ...k, rhadix_tenant_id: t })} />}
       <HuisstijlKaart id={k.id} beheer={ik.platformbeheer} />
     </>
+  );
+}
+
+// Koppeling met de Rhadix-organisatie (op organisatie-ID, nooit op naam). Gebruikers van die
+// organisatie met toegang tot Makelaarsportaal komen dan in dit kantoor, met hun Rhadix-rol.
+function RhadixKoppeling({ kantoor, gewijzigd }: { kantoor: Kantoor; gewijzigd: (t: string | null) => void }) {
+  const [org, setOrg] = useState<RhadixOrganisatie[]>([]);
+  const [keuze, setKeuze] = useState('');
+  const [fout, setFout] = useState<string | null>(null);
+  useEffect(() => { api<RhadixOrganisatie[]>('/api/rhadix-organisaties').then(setOrg, () => setOrg([])); }, [kantoor.rhadix_tenant_id]);
+  const zet = async (t: string | null) => {
+    setFout(null);
+    try { await api(`/api/kantoren/${kantoor.id}/rhadix-organisatie`, { methode: 'PUT', data: { tenant_id: t } }); gewijzigd(t); setKeuze(''); }
+    catch (e) { setFout((e as Error).message); }
+  };
+  const huidig = org.find((o) => o.tenant_id === kantoor.rhadix_tenant_id);
+  const vrij = org.filter((o) => !o.kantoor_id);
+  return (
+    <Kaart titel="Rhadix-organisatie">
+      {fout && <p className="melding melding-fout" role="alert">{fout}</p>}
+      {kantoor.rhadix_tenant_id ? (
+        <div className="rij">
+          <div>{huidig?.naam ?? 'Organisatie'}<div className="stat-sub mono">{kantoor.rhadix_tenant_id}</div></div>
+          <button type="button" className="knop knop-lijn" onClick={() => zet(null)}>Ontkoppelen</button>
+        </div>
+      ) : (
+        <div className="formulier">
+          <p className="stat-sub" style={{ marginTop: 0 }}>Nog niet gekoppeld. Kies een organisatie die zich al via Rhadix heeft aangemeld, of vul het organisatie-ID uit Rhadix in.</p>
+          <div className="veld">
+            <label htmlFor="rhadix-org">Organisatie</label>
+            <input id="rhadix-org" list="rhadix-org-lijst" className="mono" value={keuze} onChange={(e) => setKeuze(e.target.value.trim())} placeholder="organisatie-ID (UUID)" />
+            <datalist id="rhadix-org-lijst">{vrij.map((o) => <option key={o.tenant_id} value={o.tenant_id}>{o.naam}</option>)}</datalist>
+          </div>
+          <button type="button" className="knop knop-primair" disabled={!keuze} onClick={() => zet(keuze)}>Koppelen</button>
+        </div>
+      )}
+    </Kaart>
   );
 }
 

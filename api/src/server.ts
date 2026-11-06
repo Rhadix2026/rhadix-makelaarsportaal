@@ -1,14 +1,17 @@
 // API van de productiestudio. Luistert alleen op 127.0.0.1.
 //
-// Elke route behalve /api/inloggen vraagt een geldige sessie. Gebruikersgegevens worden altijd
-// gelezen en geschreven via alsGebruiker(): de database (RLS) bepaalt wat iemand ziet.
+// Elke route behalve /api/inloggen en /api/inlogopties vraagt een aangemelde gebruiker: via de
+// centrale Rhadix-login (api/src/rhadixsso.ts) of, als noodtoegang, de eigen sessie (STUDIO_LOKALE_LOGIN).
+// Gebruikersgegevens worden altijd gelezen en geschreven via alsGebruiker(): de database (RLS)
+// bepaalt wat iemand ziet.
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { config, ROOT } from './config.ts';
-import { alsGebruiker, databaseStatus, migreer, pool } from './db.ts';
+import { alsGebruiker, audit, databaseStatus, migreer, pool } from './db.ts';
 import { generatorStatus, profielCatalogus, profielen, standaardOntwerpsysteem } from './generator.ts';
 import { COOKIE, beeindigSessie, leesCookie, meldAan, sessieCookie, sessieGebruiker, wisCookie } from './auth.ts';
+import { meldAanViaRhadix, SSO_MELDING, ssoActief, wisSsoCache, type Huisstijl } from './rhadixsso.ts';
 import { leesKantoor, lijstKantoren, maakKantoor, valideerKantoor, wijzigKantoor } from './kantoren.ts';
 import { bulkGoedkeuren, conflictVoor, extractieVoor, herstelVerwerkingen, leverAan, overzicht, slaOp, trekIn, vraagVerwerking, wekVerwerker } from './aanlevering.ts';
 import { bewerkGegeven } from './gegevens.ts';
@@ -23,17 +26,26 @@ import { leesProject, lijstProjecten, maakProject, STATUSSEN, telling, valideerP
 const STUDIO_VERSIE = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version as string;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-declare module 'fastify' { interface FastifyRequest { gebruiker: string } }
+declare module 'fastify' { interface FastifyRequest { gebruiker: string; huisstijl: Huisstijl | null } }
 
-type Ik = { id: string; email: string; naam: string; platformbeheer: boolean; kantoren: { id: string; naam: string; rol: string }[] };
+type Ik = { id: string; email: string; naam: string; platformbeheer: boolean; kantoren: { id: string; naam: string; rol: string }[]; bron: 'rhadix' | 'lokaal' };
 
 async function ik(gebruiker: string): Promise<Ik> {
   return alsGebruiker(gebruiker, async (c) => {
-    const g = (await c.query('SELECT id, email, naam, platformrol FROM gebruiker WHERE id = $1', [gebruiker])).rows[0];
+    const g = (await c.query('SELECT id, email, naam, platformrol, extern_bron FROM gebruiker WHERE id = $1', [gebruiker])).rows[0];
     const k = (await c.query(`SELECT k.id, k.merknaam AS naam, l.rol FROM lidmaatschap l JOIN kantoor k ON k.id = l.kantoor_id
       WHERE l.gebruiker_id = $1 ORDER BY lower(k.merknaam)`, [gebruiker])).rows;
-    return { id: g.id, email: g.email, naam: g.naam, platformbeheer: g.platformrol === 'platformbeheer', kantoren: k };
+    return { id: g.id, email: g.email, naam: g.naam, platformbeheer: g.platformrol === 'platformbeheer', kantoren: k,
+      bron: g.extern_bron === 'rhadix' ? 'rhadix' : 'lokaal' };
   });
+}
+
+/** Mag de eigen wachtwoordlogin hier? Online alleen via een SSH-tunnel (Host 127.0.0.1, niet via Cloudflare). */
+export function lokaleLoginToegestaan(req: FastifyRequest) {
+  if (config.lokaleLogin === 'aan') return true;
+  if (config.lokaleLogin === 'uit') return false;
+  const host = (req.headers.host ?? '').replace(/:\d+$/, '');
+  return (host === '127.0.0.1' || host === 'localhost') && !req.headers['cf-connecting-ip'];
 }
 
 // Fouten uit de database die op een rechten- of uniciteitsprobleem wijzen, netjes vertalen.
@@ -47,6 +59,7 @@ function dbFout(e: unknown, reply: FastifyReply) {
 export function bouwApp() {
   const app = Fastify({ logger: { level: 'warn' }, bodyLimit: 64 * 1024 });
   app.decorateRequest('gebruiker', '');
+  app.decorateRequest('huisstijl', null);
   // Bestanden komen als ruwe inhoud binnen (één bestand per verzoek); het type volgt uit de inhoud zelf.
   for (const type of ['application/pdf', 'application/octet-stream', /^image\//])
     app.addContentTypeParser(type, { parseAs: 'buffer', bodyLimit: 160 * 1024 * 1024 }, (_req, body, done) => done(null, body));
@@ -57,12 +70,26 @@ export function bouwApp() {
     // Wijzigende verzoeken alleen vanaf de eigen interface (naast SameSite=Strict op het cookie).
     const origin = req.headers.origin;
     if (req.method !== 'GET' && origin && !toegestaneHerkomst.has(origin)) return reply.code(403).send({ fout: 'Onbekende herkomst' });
-    if (req.url === '/api/inloggen' || req.url === '/api/gezond') return;
+    if (req.url === '/api/inloggen' || req.url === '/api/gezond' || req.url === '/api/inlogopties') return;
     // Preview van een concept: toegang via het geheime voorbeeldtoken in het pad (alleen lezen).
     if (req.method === 'GET' && req.url.startsWith('/api/voorbeeld/')) return;
-    const g = await sessieGebruiker(leesCookie(req.headers.cookie));
-    if (!g) return reply.code(401).send({ fout: 'Niet ingelogd' });
-    req.gebruiker = g;
+    // Noodtoegang: de eigen sessie, alleen waar de eigen login is toegestaan.
+    const g = lokaleLoginToegestaan(req) ? await sessieGebruiker(leesCookie(req.headers.cookie)) : null;
+    if (g) { req.gebruiker = g; return; }
+    // Centrale Rhadix-login: het token uit het cookie op .rhadix.nl, bij elk verzoek gecontroleerd.
+    const token = ssoActief() ? leesCookie(req.headers.cookie, config.sso.cookie) : undefined;
+    if (token) {
+      const r = await meldAanViaRhadix(token);
+      if (r.ok) {
+        // Het Rhadix-cookie gaat naar elke rhadix.nl-app (SameSite=Lax); wijzigingen daarom alleen met
+        // een expliciete, eigen herkomst: een andere rhadix.nl-app kan hier niets namens de gebruiker doen.
+        if (req.method !== 'GET' && !(origin && toegestaneHerkomst.has(origin))) return reply.code(403).send({ fout: 'Onbekende herkomst' });
+        req.gebruiker = r.gebruikerId; req.huisstijl = r.huisstijl;
+        return;
+      }
+      if (r.fout !== 'ongeldig') return reply.code(403).send({ fout: SSO_MELDING[r.fout], sso: r.fout });
+    }
+    return reply.code(401).send({ fout: 'Niet ingelogd' });
   });
 
   const alleenPlatform = async (req: FastifyRequest, reply: FastifyReply) => {
@@ -70,7 +97,17 @@ export function bouwApp() {
   };
 
   // ── Inloggen en sessie ──────────────────────────────────────────────────
+  // Wat het inlogscherm toont: de Rhadix-login en/of de eigen login, en waarom een Rhadix-aanmelding
+  // (nog) niet lukt. Geeft alleen iets over het cookie van de aanvrager zelf.
+  app.get('/api/inlogopties', async (req) => {
+    let melding: string | null = null;
+    const token = ssoActief() ? leesCookie(req.headers.cookie, config.sso.cookie) : undefined;
+    if (token) { const r = await meldAanViaRhadix(token); if (!r.ok && r.fout !== 'ongeldig') melding = SSO_MELDING[r.fout]; }
+    return { rhadix: ssoActief() ? config.sso.platform : null, lokaal: lokaleLoginToegestaan(req), melding };
+  });
+
   app.post<{ Body: { email?: string; wachtwoord?: string } }>('/api/inloggen', async (req, reply) => {
+    if (!lokaleLoginToegestaan(req)) return reply.code(403).send({ fout: 'Inloggen gaat via Rhadix' });
     const { email, wachtwoord } = req.body ?? {};
     if (typeof email !== 'string' || typeof wachtwoord !== 'string' || !email || !wachtwoord)
       return reply.code(400).send({ fout: 'Vul e-mailadres en wachtwoord in' });
@@ -88,7 +125,33 @@ export function bouwApp() {
     return { ok: true };
   });
 
-  app.get('/api/ik', async (req) => ik(req.gebruiker));
+  app.get('/api/ik', async (req) => ({ ...(await ik(req.gebruiker)), huisstijl: req.huisstijl,
+    uitloggen: ssoActief() ? `${config.sso.platform}/api/auth/logout` : null }));
+
+  // ── Koppeling kantoor ↔ Rhadix-organisatie (alleen platformbeheer; op ID, nooit op naam) ──
+  app.get('/api/rhadix-organisaties', { preHandler: alleenPlatform }, async (req) => alsGebruiker(req.gebruiker, async (c) =>
+    (await c.query(`SELECT o.tenant_id, o.naam, o.laatst_gezien, k.id AS kantoor_id, k.merknaam AS kantoor
+      FROM rhadix_organisatie o LEFT JOIN kantoor k ON k.rhadix_tenant_id = o.tenant_id ORDER BY lower(o.naam)`)).rows));
+
+  app.put<{ Params: { id: string }; Body: { tenant_id?: string | null } }>('/api/kantoren/:id/rhadix-organisatie', { preHandler: alleenPlatform }, async (req, reply) => {
+    const t = req.body?.tenant_id ?? null;
+    if (!UUID.test(req.params.id) || (t !== null && (typeof t !== 'string' || !UUID.test(t))))
+      return reply.code(400).send({ fout: 'Ongeldig organisatie-ID', fouten: { tenant_id: 'Een organisatie-ID (UUID) uit Rhadix' } });
+    try {
+      const r = await alsGebruiker(req.gebruiker, async (c) => {
+        const oud = (await c.query('SELECT rhadix_tenant_id FROM kantoor WHERE id = $1', [req.params.id])).rows[0];
+        if (!oud) return null;
+        await c.query('UPDATE kantoor SET rhadix_tenant_id = $2, gewijzigd_op = now() WHERE id = $1', [req.params.id, t?.toLowerCase() ?? null]);
+        await audit(c, { gebruiker: req.gebruiker, actie: 'rhadix-koppeling', tabel: 'kantoor', id: req.params.id, oud, nieuw: { rhadix_tenant_id: t } });
+        return { id: req.params.id, rhadix_tenant_id: t?.toLowerCase() ?? null };
+      });
+      wisSsoCache();
+      return r ?? reply.code(404).send({ fout: 'Kantoor niet gevonden' });
+    } catch (e) {
+      if ((e as { code?: string }).code === '23505') return reply.code(409).send({ fout: 'Deze Rhadix-organisatie is al aan een ander kantoor gekoppeld' });
+      return dbFout(e, reply);
+    }
+  });
 
   // ── Makelaarskantoren ───────────────────────────────────────────────────
   app.get('/api/kantoren', async (req) => alsGebruiker(req.gebruiker, lijstKantoren));
