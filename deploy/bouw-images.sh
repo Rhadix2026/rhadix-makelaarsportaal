@@ -32,7 +32,7 @@ git archive HEAD | tar -x -C "$WERK/studio"
 git clone --quiet --no-local "$GENERATOR_BRON" "$WERK/generator"
 git -C "$WERK/generator" checkout --quiet --detach "$COMMIT"
 git -C "$WERK/generator" remote remove origin
-echo "studio $(git rev-parse --short HEAD), generator $(git -C "$WERK/generator" rev-parse --short HEAD), ${BOUW_SERVER:+server $BOUW_SERVER, }platform ${BOUW_SERVER:+van de server}${BOUW_SERVER:-$PLATFORM}, tag $TAG"
+echo "studio $(git rev-parse --short HEAD), generator $(git -C "$WERK/generator" rev-parse --short HEAD), ${BOUW_SERVER:+server $BOUW_SERVER, }platform $([ -n "${BOUW_SERVER:-}" ] && echo "van de server" || echo "$PLATFORM"), tag $TAG"
 
 if [ -n "${BOUW_SERVER:-}" ]; then
   echo "== bouwen op $BOUW_SERVER (eigen architectuur)"
