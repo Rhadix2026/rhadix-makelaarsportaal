@@ -136,3 +136,28 @@ gezondheidscontrole na 90 s niet groen, dan gaat de vorige tag automatisch terug
   (Markt 27, 34 foto's: 106 s). Op de CPX32 meten in fase 5.
 - Op 8 GB is er geen ruimte voor productie en test tegelijk. Productie komt er pas na opschaling,
   of test gaat dan uit.
+
+## 7. Inloggen: centrale Rhadix-login en noodtoegang
+
+- **Gebruikers loggen in via Rhadix** (Datavalidatie). De test vertrouwt **staging**
+  (`app-staging.rhadix.nl`, cookie `rhadix_sso_staging`), productie vertrouwt `app.rhadix.nl`
+  (`rhadix_sso`). In de `.env` staat alleen de **publieke** sleutel (`MP_SSO_SLEUTEL`), uit
+  `<platform>/api/auth/jwks`.
+- **Toegang:** de applicatie `rhadix-makelaarsportaal` in Rhadix, toegewezen aan de organisatie en de
+  gebruiker. Rollen:
+
+  | Rhadix | Portaal |
+  |---|---|
+  | `RHADIX_ADMIN` | platformbeheer |
+  | `ORG_ADMIN` | kantoorbeheerder |
+  | `ORG_USER` | makelaar |
+
+- **Koppeling:** een kantoor hoort bij één Rhadix-organisatie, op organisatie-ID. Platformbeheer
+  koppelt die via Kantoren, het kantoor, Rhadix-organisatie.
+- **Noodtoegang** (als Rhadix niet bereikbaar is): de eigen wachtwoordlogin werkt alleen via een
+  SSH-tunnel, nooit via Cloudflare.
+  ```bash
+  ssh -L 8581:127.0.0.1:8581 portaal@<ip>     # daarna in de browser: http://127.0.0.1:8581
+  ```
+  Een noodaccount maken (het wachtwoord wordt verborgen gevraagd):
+  `… exec api node_modules/.bin/tsx api/src/beheer.ts maak --email <adres> --naam "<naam>" --platformbeheer`
