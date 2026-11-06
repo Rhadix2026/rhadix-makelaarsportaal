@@ -8,6 +8,8 @@
 #   MP_MEETINTERVAL=2 meting.sh 300     (10 minuten elke 2 s, bijvoorbeeld tijdens een import)
 set -uo pipefail
 UIT=/var/log/makelaarsportaal
+# Omgeving waarvan database en opslag worden gemeten (standaard productie; tijdens de demo: test).
+OMG="${MP_OMG:-/srv/makelaarsportaal}"
 N="${1:-1}"
 mkdir -p "$UIT"
 [ -f "$UIT/systeem.csv" ] || echo "tijd;load1;cpu_pct;geheugen_gebruikt_mb;geheugen_beschikbaar_mb;swap_mb;schijf_pct;db_mb;opslag_mb;docker_images_mb;docker_volumes_mb;gezond_prod;gezond_test" > "$UIT/systeem.csv"
@@ -24,7 +26,7 @@ for ((k = 1; k <= N; k++)); do
   read -r GEBR BESCH < <(free -m | awk '/^Mem:/{print $3, $7}')
   SWAP=$(free -m | awk '/^Swap:/{print $3}')
   SCHIJF=$(df --output=pcent / | tail -1 | tr -dc 0-9)
-  echo "$T;$L1;$(cpu);$GEBR;$BESCH;$SWAP;$SCHIJF;$(mb /srv/makelaarsportaal/db);$(mb /srv/makelaarsportaal/opslag);$(dfmb Images);$(dfmb 'Local Volumes');$(gezond 8580);$(gezond 8581)" >> "$UIT/systeem.csv"
+  echo "$T;$L1;$(cpu);$GEBR;$BESCH;$SWAP;$SCHIJF;$(mb "$OMG/db");$(mb "$OMG/opslag");$(dfmb Images);$(dfmb 'Local Volumes');$(gezond 8580);$(gezond 8581)" >> "$UIT/systeem.csv"
   docker stats --no-stream --format '{{.Name}};{{.CPUPerc}};{{.MemUsage}}' 2>/dev/null | while IFS=';' read -r NAAM CPU MEM; do
     echo "$T;$NAAM;${CPU%\%};$(echo "$MEM" | awk '{v=$1; u=$1; gsub(/[0-9.]/,"",u); gsub(/[^0-9.]/,"",v); if (u=="GiB") v*=1024; else if (u=="KiB") v/=1024; printf "%.0f", v}');$(echo "$MEM" | awk '{v=$3; u=$3; gsub(/[0-9.]/,"",u); gsub(/[^0-9.]/,"",v); if (u=="GiB") v*=1024; printf "%.0f", v}')" >> "$UIT/containers.csv"
   done

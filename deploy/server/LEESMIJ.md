@@ -1,7 +1,15 @@
 # Makelaarsportaal-server: inrichten, uitrollen, back-up en meting
 
-Draaiboek voor de eigen server van Rhadix Makelaarsportaal: een Hetzner CAX31 (arm64,
-8 vCPU, 16 GB, 160 GB) met Ubuntu 24.04 LTS.
+Draaiboek voor de eigen server van Rhadix Makelaarsportaal, Ubuntu 24.04 LTS. In gebruik (6-11-2026):
+een Hetzner **CPX32** (x86, 4 vCPU, 8 GB, 160 GB) voor de demo en de pilot (één kantoor, ±20
+woningen). De scripts werken ook op arm64 (CAX).
+
+- **Op 8 GB draait één omgeving: test** (`makelaarsportaal-test.rhadix.nl`). De grenzen staan in de
+  `.env` (zie `deploy/env.voorbeeld`). Back-up, hersteltest en meting wijzen via de drop-in
+  `systemd-alleen-test/omgeving.conf` naar test.
+- **Opschalen** binnen de CPX-familie (bijvoorbeeld CPX42: 8 vCPU, 16 GB): in de Hetzner-console
+  "Rescale", met de schijf ongewijzigd, zodat terugschalen mogelijk blijft. Daarna de grenzen in de `.env`
+  verhogen en `up -d`.
 
 - De server staat los van de Rhadix-server; daar verandert niets aan.
 - Geheimen staan nooit in git. Ze worden op de server aangemaakt of daar ingevuld.
@@ -21,12 +29,16 @@ Cloudflare (proxy, TLS, Access voor test) ──443──▶ host-nginx (originc
 
 **Containers per omgeving**
 
-| Container | Geheugengrens | CPU | Netwerk | Rol |
+| Container | Grens CPX32 (standaard 16 GB) | CPU | Netwerk | Rol |
 |---|---|---|---|---|
-| `db` | 1 GB | 2 | intern | Postgres 16 |
-| `api` | 1,5 GB | 2 | intern + web | Fastify |
-| `verwerker` | 6 GB | 6 | **alleen intern, geen internet** | import, classificatie, generatie |
+| `db` | 768 MB (1 GB) | 2 | intern | Postgres 16 |
+| `api` | 1 GB (1,5 GB) | 2 | intern + web | Fastify |
+| `verwerker` | 4 GB + 2 GB swap (6 GB) | 4 (6) | **alleen intern, geen internet** | import, classificatie, generatie |
 | `web` | 128 MB | 1 | web | nginx met de statische interface |
+
+De verwerker doet **één verwerking tegelijk**: de wachtrij pakt alleen iets op als er niets 'bezig'
+is. Een brochure-import (met de beeldclassificatie) en een conceptgeneratie lopen dus nooit
+gelijktijdig.
 
 ## 1. Vooraf (eenmalig; buiten de server)
 
@@ -55,17 +67,14 @@ ssh root@<ip> 'bash /root/mp-server/inrichten.sh'
 
 Daarna op de server, als root:
 
-1. **Certificaat:** `/etc/ssl/makelaarsportaal/origin.pem` en `origin.key` plaatsen (chmod 600 voor de sleutel).
-2. **Cloudflare-adressen:** `bash /root/mp-server/cloudflare-ips.sh > /etc/nginx/conf.d/cloudflare-ips.conf`
-3. **nginx aanzetten:**
-   ```
-   ln -s /etc/nginx/sites-available/makelaarsportaal /etc/nginx/sites-enabled/
-   nginx -t && systemctl reload nginx
-   ```
+1. **Certificaat, Cloudflare-adressen, nginx:** `ssh -t root@<ip> 'bash /root/mp-server/origincertificaat-plaatsen.sh'`.
+   De sleutel wordt verborgen geplakt; het script controleert of certificaat en sleutel bij elkaar horen.
 4. **`.env` per omgeving:** `/srv/makelaarsportaal/.env` (en `-test`), naar `deploy/env.voorbeeld`.
    - Een eigen databasewachtwoord per omgeving, bijvoorbeeld `openssl rand -base64 32 | tr -d '/+='`.
    - chmod 600, eigenaar `portaal`.
-5. **restic** in `/root/.config/makelaarsportaal/` (chmod 700):
+5. **restic:** `ssh -t root@<ip> 'bash /root/mp-server/restic-instellen.sh'`. Het script vraagt de bucketnaam, de
+   S3-sleutels en een zelfgekozen restic-wachtwoord, allemaal verborgen. Daarna voert het `restic init` uit. Wat het
+   in `/root/.config/makelaarsportaal/` zet (chmod 700):
    - `restic.env` met `RESTIC_REPOSITORY=s3:https://<endpoint>/<bucket>/makelaarsportaal`,
      `RESTIC_PASSWORD_FILE=/root/.config/makelaarsportaal/restic-wachtwoord`, `AWS_ACCESS_KEY_ID`
      en `AWS_SECRET_ACCESS_KEY`;
@@ -78,8 +87,8 @@ Daarna op de server, als root:
 ```bash
 # SigLIP-model (vaste revisie 9fdffc5, 3,3 GB) één keer naar de server
 rsync -a --info=progress2 ~/Developer/makelaarsplatform-productie/.cache/ai/hf/ portaal@<ip>:/srv/makelaarsportaal-modellen/hf/
-# images bouwen (arm64) en uitrollen naar test
-deploy/bouw-images.sh
+# images op de server zelf bouwen (eigen architectuur) en uitrollen naar test
+BOUW_SERVER=portaal@<ip> deploy/bouw-images.sh
 deploy/uitrollen.sh portaal@<ip> makelaarsportaal-test
 ```
 
@@ -124,6 +133,6 @@ gezondheidscontrole na 90 s niet groen, dan gaat de vorige tag automatisch terug
 - Cloudflare (Free en Pro) laat per verzoek maximaal 100 MB door. Een brochure-PDF van meer dan
   100 MB komt er niet doorheen (de app staat 150 MB toe).
 - De beeldclassificatie gebruikt de CPU: gemeten in een arm64-container ±3 s per foto bij 6 kernen
-  (Markt 27, 34 foto's: 106 s). Op de CAX31 meten in fase 5.
-- Productie en test tegelijk met zware verwerkingen: de grenzen zijn 6 GB per verwerker. Draai test
-  bij voorkeur niet tegelijk met grote imports in productie.
+  (Markt 27, 34 foto's: 106 s). Op de CPX32 meten in fase 5.
+- Op 8 GB is er geen ruimte voor productie en test tegelijk. Productie komt er pas na opschaling,
+  of test gaat dan uit.
