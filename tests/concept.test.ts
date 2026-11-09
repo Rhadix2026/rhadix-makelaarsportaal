@@ -27,7 +27,8 @@ before(async () => {
   await maakGebruiker('beheer@studio.test', { platform: true });
   await maakGebruiker('a@studio.test', { kantoren: [[A, 'makelaar']] });
   await maakGebruiker('b@studio.test', { kantoren: [[B, 'makelaar']] });
-  for (const e of ['beheer', 'a', 'b']) c[e] = await login(app, `${e}@studio.test`);
+  await maakGebruiker('kb@studio.test', { kantoren: [[A, 'kantoorbeheerder']] });
+  for (const e of ['beheer', 'a', 'b', 'kb']) c[e] = await login(app, `${e}@studio.test`);
 });
 after(() => app.close());
 
@@ -84,7 +85,9 @@ test('Markt 27: vrijgave met alleen de verplichte punten, concept v1, preview, v
   assert.equal(b.kwaliteit.indeling.samenvatting.length, 4);
 
   // Concept v1.
-  const g1 = await req('beheer', 'POST', `/api/projecten/${P}/concepten`);
+  // Regressie (RLS op concept): de makelaar van het eigen kantoor laat het concept maken; de verwerker legt het
+  // vast onder zijn naam (rol studio_app), dus INSERT op concept, status interne_review en het besluit moeten mogen.
+  const g1 = await req('a', 'POST', `/api/projecten/${P}/concepten`);
   assert.equal(g1.statusCode, 202, g1.body);
   assert.equal((await req('b', 'POST', `/api/projecten/${P}/concepten`)).statusCode, 404, 'een ander kantoor kan niet genereren');
   await wekVerwerker();
@@ -93,6 +96,9 @@ test('Markt 27: vrijgave met alleen de verplichte punten, concept v1, preview, v
   assert.equal(lijst.concepten.length, 1);
   const v1 = (await req('beheer', 'GET', `/api/concepten/${lijst.concepten[0].id}`)).json();
   assert.equal(v1.versie, 1); assert.equal(v1.status, 'te_beoordelen');
+  const door = async (versie: number) => (await pool.query(`SELECT g.email FROM concept k JOIN gebruiker g ON g.id = k.aangemaakt_door WHERE k.project_id = $1 AND k.versie = $2`, [P, versie])).rows[0].email;
+  assert.equal(await door(1), 'a@studio.test', 'vastgelegd op naam van de makelaar die het aanvroeg');
+  assert.ok((await pool.query("SELECT 1 FROM besluit WHERE project_id = $1 AND onderwerp = 'concept v1' AND handeling = 'gegenereerd'", [P])).rowCount);
   assert.equal(v1.ontwerpsysteem, '1.0'); assert.equal(v1.profiel, 'stads');
   assert.equal(v1.bouw.rapport.modus, 'automatisch', 'bestaande automatische compositie');
   assert.ok(v1.bouw.onderdelen.includes('hero') || v1.bouw.onderdelen.some((x: string) => x.startsWith('hero')));
@@ -139,17 +145,20 @@ test('Markt 27: vrijgave met alleen de verplichte punten, concept v1, preview, v
   assert.equal(vb.json().status, 'verbeterpunten');
   assert.equal((await pool.query('SELECT status FROM project WHERE id = $1', [P])).rows[0].status, 'correctie');
   const hash1 = sha(site1);
-  assert.equal((await req('beheer', 'POST', `/api/projecten/${P}/concepten`)).statusCode, 202);
+  // Tweede versie door de kantoorbeheerder van het eigen kantoor.
+  assert.equal((await req('kb', 'POST', `/api/projecten/${P}/concepten`)).statusCode, 202);
   await wekVerwerker();
   lijst = (await req('beheer', 'GET', `/api/projecten/${P}/concepten`)).json();
   assert.deepEqual(lijst.concepten.map((x: { versie: number }) => x.versie), [2, 1]);
   assert.equal(sha(site1), hash1, 'v1 is niet overschreven');
   const v2 = lijst.concepten[0];
+  assert.equal(await door(2), 'kb@studio.test');
   assert.notEqual(v2.voorbeeld_token, v1.voorbeeld_token);
   // Dashboard en projectdetail tonen het aantal versies (route dashboard → project → concepten).
   assert.equal((await req('beheer', 'GET', `/api/projecten/${P}`)).json().concepten, 2);
   assert.equal((await req('beheer', 'GET', '/api/projecten')).json().projecten.find((x: { id: string }) => x.id === P).concepten, 2);
-  assert.equal((await req('beheer', 'PUT', `/api/concepten/${v2.id}/beoordeling`, { besluit: 'geaccepteerd', motivering: 'Eerste concept akkoord' })).json().status, 'geaccepteerd');
+  // Definitieve goedkeuring door de kantoorbeheerder van het eigen kantoor.
+  assert.equal((await req('kb', 'PUT', `/api/concepten/${v2.id}/beoordeling`, { besluit: 'geaccepteerd', motivering: 'Eerste concept akkoord' })).json().status, 'geaccepteerd');
   // De inhoud van een versie ligt vast in de database (alleen de beoordeling mag worden bijgewerkt).
   const { alsGebruiker } = await import('../api/src/db.ts');
   const id = (await pool.query("SELECT id FROM gebruiker WHERE email = 'beheer@studio.test'")).rows[0].id;

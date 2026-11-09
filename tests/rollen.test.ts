@@ -146,3 +146,42 @@ test('preview van een concept: alleen na aanmelding en voor het eigen kantoor (a
     assert.equal((await haal('', c.beheer)).statusCode, 200, 'platformbeheer');
   } finally { config.voorbeeldAfgeschermd = vorig; }
 });
+
+// Regressie: de verwerker legt een concept vast onder de aanvrager (rol studio_app). Zelfde codepad als in
+// productie (concepten.registreer), zonder de generator te draaien.
+test('conceptgeneratie vastleggen door makelaar en kantoorbeheerder van het eigen kantoor; niet voor een ander kantoor', async () => {
+  const { registreer } = await import('../api/src/concepten.ts');
+  const r = { bouw: { vingerafdruk: 'b', ontwerpsysteem: { versie: '1.0' }, profiel: 'eenvoudig' }, generator_commit: 'x', kwaliteit: null, tijden_ms: { bouw: 1 } };
+  let versie = 10;
+  const leg = async (wie: string, project: string, kantoor: string) => {
+    const v = (await pool.query(`INSERT INTO verwerking (project_id, kantoor_id, soort, volgnummer, status, aangevraagd_door, gestart_op)
+      VALUES ($1, $2, 'conceptgeneratie', $3, 'bezig', $4, now()) RETURNING *`, [project, kantoor, versie, id[wie]])).rows[0];
+    return alsGebruiker(id[wie], (c) => registreer(c, v, { versie: versie++, map: 'x', invoerVinger: 'i' }, r, 1000));
+  };
+  for (const wie of ['mk', 'kb']) {
+    const k = await leg(wie, PA, A);
+    const rij = (await pool.query('SELECT aangemaakt_door, kantoor_id, status FROM concept WHERE id = $1', [k.id])).rows[0];
+    assert.deepEqual([rij.aangemaakt_door, rij.kantoor_id, rij.status], [id[wie], A, 'te_beoordelen'], wie);
+    assert.equal((await pool.query('SELECT status FROM project WHERE id = $1', [PA])).rows[0].status, 'interne_review');
+  }
+  // Een makelaar van een ander kantoor kan voor Kantoor A niets vastleggen, ook niet rechtstreeks in de database.
+  await assert.rejects(alsGebruiker(id.mkB, (c) => c.query(`INSERT INTO concept (project_id, kantoor_id, versie, map, invoer_vingerafdruk, build_vingerafdruk, ontwerpsysteem, profiel,
+    generator_commit, bouw, metingen, voorbeeld_token, aangemaakt_door) VALUES ($1, $2, 98, 'x', 'x', 'x', '1.0', 'eenvoudig', 'x', '{}', '{}', $3, $4)`,
+    [PA, A, randomBytes(24).toString('hex'), id.mkB])), /row-level security|ander project/);
+  // Ook niet op naam van iemand anders.
+  await assert.rejects(alsGebruiker(id.mk, (c) => c.query(`INSERT INTO concept (project_id, kantoor_id, versie, map, invoer_vingerafdruk, build_vingerafdruk, ontwerpsysteem, profiel,
+    generator_commit, bouw, metingen, voorbeeld_token, aangemaakt_door) VALUES ($1, $2, 99, 'x', 'x', 'x', '1.0', 'eenvoudig', 'x', '{}', '{}', $3, $4)`,
+    [PA, A, randomBytes(24).toString('hex'), id.kb])), /row-level security/);
+  // Het gegenereerd-besluit mag de makelaar; een beoordeling niet.
+  await assert.rejects(alsGebruiker(id.mk, (c) => c.query(`INSERT INTO besluit (project_id, kantoor_id, door, onderwerp, handeling) VALUES ($1, $2, $3, 'concept v10', 'geaccepteerd')`, [PA, A, id.mk])), /row-level security/);
+});
+
+test('concepten: alleen die van het eigen kantoor zijn zichtbaar', async () => {
+  assert.equal((await req('mk', 'GET', `/api/concepten/${CA}`)).statusCode, 200);
+  assert.equal((await req('kb', 'GET', `/api/concepten/${CA}`)).statusCode, 200);
+  assert.equal((await req('mkB', 'GET', `/api/concepten/${CA}`)).statusCode, 404, 'concept van een ander kantoor');
+  assert.equal((await req('mkB', 'GET', `/api/projecten/${PA}/concepten`)).statusCode, 404);
+  const lijst = (await req('mk', 'GET', `/api/projecten/${PA}/concepten`)).json();
+  assert.ok(lijst.concepten.length >= 1 && lijst.concepten.every((k: { id: string }) => k.id));
+  assert.equal((await alsGebruiker(id.mkB, (c) => c.query('SELECT id FROM concept WHERE kantoor_id = $1', [A]))).rowCount, 0, 'RLS: niets van een ander kantoor');
+});
