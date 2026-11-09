@@ -1,0 +1,21 @@
+# Configuratie testomgeving, momentopname 2026-11-09T13:58:05Z (zonder geheimen)
+server: Hetzner CPX32, 4 vCPU, 7745 MiB RAM, swap 4095 MiB, swappiness 10
+os: Ubuntu 24.04.5 LTS, kernel 6.8.0-138-generic
+docker: 29.9.3, compose: 5.7.0
+MP_TAG=1ae95ae
+MP_OMGEVING=test
+MP_DB_GEHEUGEN=768m
+MP_DB_CPUS=2
+MP_API_GEHEUGEN=1g
+MP_API_CPUS=2
+MP_VERWERKER_GEHEUGEN=5g
+MP_VERWERKER_GEHEUGEN_SWAP=6g
+MP_VERWERKER_CPUS=4
+MP_SSO_PLATFORM=https://app-staging.rhadix.nl
+MP_SSO_APP=rhadix-makelaarsportaal
+MP_LOKALE_LOGIN=tunnel
+container /makelaarsportaal-test-db-1: image=postgres@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab mem=805306368 memswap=1610612736 nanocpus=2000000000 gestart=2026-11-06T12:12:29.305984828Z
+container /makelaarsportaal-test-api-1: image=makelaarsportaal-app:1ae95ae mem=1073741824 memswap=2147483648 nanocpus=2000000000 gestart=2026-11-09T12:40:23.915102306Z
+container /makelaarsportaal-test-verwerker-1: image=makelaarsportaal-app:1ae95ae mem=5368709120 memswap=6442450944 nanocpus=4000000000 gestart=2026-11-09T13:33:40.243448485Z
+container /makelaarsportaal-test-web-1: image=makelaarsportaal-web:1ae95ae mem=134217728 memswap=268435456 nanocpus=1000000000 gestart=2026-11-09T12:40:24.144653338Z
+wijziging: verwerker 4g -> 5g op 2026-11-09T13:33:40Z (alleen verwerker herstart)
