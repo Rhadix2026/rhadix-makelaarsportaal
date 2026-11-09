@@ -140,17 +140,17 @@ meten: `MP_MEETINTERVAL=2 /usr/local/sbin/meting.sh <aantal>`.
 
 | Meetpunt | Nulmeting | Na import Markt 27 | Na concept |
 |---|---|---|---|
-| Geheugen in gebruik, rust (MB) | 839 | 833 (5 min na de import) | |
-| Piek geheugen `verwerker` (MB, grens 4.096 + 2.048 swap) | 78 | **4.096**, inclusief de bestandscache van het model (zie §10) | |
-| Swap in gebruik, piek (MB) | 0 | **301** (verwerker); daarna 44 | |
-| CPU-piek systeem (%) | 13 (zonder back-up) | 37 (één meting); verwerker 287 % van 400 % | |
+| Geheugen in gebruik, rust (MB) | 839 | 833 (5 min na de import) | 1.316 gem. tijdens, max 1.580 (systeem) |
+| Piek geheugen `verwerker` (MB, grens 4.096 + 2.048 swap) | 78 | **4.096**, inclusief de bestandscache van het model (zie §10) | **1.114** (werkgeheugen 755, cache 332) |
+| Swap in gebruik, piek (MB) | 0 | **301** (verwerker); daarna 44 | **0** (verwerker); systeem 8, al aanwezig |
+| CPU-piek systeem (%) | 13 (zonder back-up) | 37 (één meting); verwerker 287 % van 400 % | 96; verwerker 381 % van 400 % |
 | Duur import, waarvan beeldclassificatie (s) | — | **127,9**, waarvan 117,4 | |
-| Duur conceptgeneratie (s) | — | | |
-| Database (`pg_database_size`) | 8,7 MB | 9,0 MB | |
-| Rijen bestand / gegeven / besluit / concept | 0 / 0 / 0 / 0 | 38 / 23 / 0 / 0 | |
-| Applicatieopslag (bestanden / MB) | 0 / 0 | 43 / 14,9 | |
-| Fouten in de API- en verwerkerlog | 0 | 0 | |
-| Gezondheidscontrole | 100 % | 100 % (2 van 2 metingen) | |
+| Duur conceptgeneratie (s) | — | — | **36,2** (bouw 13,2, kwaliteit 22,0) |
+| Database (`pg_database_size`) | 8,7 MB | 9,0 MB | 9,3 MB |
+| Rijen bestand / gegeven / besluit / concept | 0 / 0 / 0 / 0 | 38 / 23 / 0 / 0 | 38 / 23 / 7 / 1 |
+| Applicatieopslag (bestanden / MB) | 0 / 0 | 43 / 14,9 | ±75 MB totaal; concept v1: 531 bestanden, 46,6 MB |
+| Fouten in de API- en verwerkerlog | 0 | 0 | 0 (één eerdere poging mislukte op RLS, hersteld in migratie 011) |
+| Gezondheidscontrole | 100 % | 100 % (2 van 2 metingen) | 100 % |
 
 ## 9. Representativiteit en voorlopige conclusies
 
@@ -299,3 +299,122 @@ nog zonder concepten.
    - beslis daarna of de grens van de verwerker naar ±5 GB moet (dat past op de CPX32, want de rest gebruikt
      < 1,5 GB) of dat de 4 GB volstaat;
    - opschalen naar een CPX42 is op basis van deze meting **niet** nodig.
+
+## 11. Meting 2: conceptgeneratie Markt 27, v1 (9 november 2026)
+
+**Bron:**
+- de fijne meting (`meting-fijn.sh`, elke 2 s, per container uit de cgroups), geanalyseerd met `fijnmeting-rapport.py`;
+- de verwerkingsregistratie (staptijden);
+- de cgroup-piekwaarden van de verwerker sinds de herstart van 12:40 UTC;
+- de nginx- en containerlogs.
+
+Er is niets opnieuw gegenereerd of gewijzigd.
+
+**Verwerking:**
+- verwerking 6 (`conceptgeneratie`), gestart 12:43:58 UTC (13:43:58 Nederlandse tijd) door de kantoorbeheerder;
+- klaar om 12:44:34 UTC, zonder fout;
+- resultaat: **concept v1**, status *te beoordelen*, met 0 blokkerende punten en 17 waarschuwingen in het
+  kwaliteitsrapport. Die waarschuwingen gelden voor publicatie.
+
+**Eerdere poging:** verwerking 5, 12:29 UTC, mislukte na 34,5 s bij het vastleggen (RLS op `concept`; hersteld in
+migratie 011). De gegenereerde bestanden van die poging zijn bij v1 overschreven met dezelfde invoer.
+
+### 11.1 Tijd per stap
+
+| Stap | Duur |
+|---|---|
+| Aanleveren (export) en woningmap | 0,6 s |
+| Beeldclassificatie | 0,0 s (hergebruikt uit de import) |
+| **Bouw** (`mp bouw`: automatische compositie, website) | **13,2 s** |
+| **Kwaliteitscontrole** (`mp kwaliteit`: DS-3, Chromium) | **22,0 s** |
+| **Totaal** | **36,2 s** |
+
+**Ter vergelijking:** de lokale arm64-proef deed 28,1 s; de Mac (stap 6) 47,9 s.
+
+### 11.2 CPU en geheugen (elke 2 s, 17 metingen)
+
+| | Gemiddeld | Maximaal |
+|---|---|---|
+| Verwerker: CPU (100 % = 1 vCPU) | 125 % | **381 %** (bouw) |
+| ‣ tijdens bouw (6 metingen) | 236 % | 381 % |
+| ‣ tijdens kwaliteitscontrole (10 metingen) | 70 % | 154 % |
+| Systeem: CPU (100 % = 4 vCPU) | 34 % | 96 % |
+| Verwerker: geheugen | 741 MB | **1.114 MB** (werkgeheugen 755, cache 332) |
+| ‣ tijdens bouw | 598 MB | 1.114 MB |
+| ‣ tijdens kwaliteitscontrole | 862 MB | 916 MB |
+| Verwerker: werkgeheugen (`anon`) | 467 MB | 755 MB |
+| Verwerker: cgroup-piek sinds de herstart (`memory.peak`) | — | 1.137 MB |
+| Systeem: geheugen in gebruik | 1.316 MB | 1.580 MB |
+| Systeem: beschikbaar | 6.429 MB | minimum **6.166 MB** |
+| API, database, web | max 86, 35 en 4 MB | CPU max 4, 7 en 0 % |
+
+**Na afloop:** de verwerker viel binnen 2 s terug naar 388 MB, waarvan 63 MB werkgeheugen en 315 MB cache.
+
+### 11.3 Swap
+
+- **Verwerker:** 0 MB, gedurende de hele generatie. `memory.swap.peak` is 0 sinds de herstart.
+- **Systeem:** 8 MB, en die waren er al vóór de generatie (de database had 7 MB uitgeswapt sinds 6-11). Er is geen
+  nieuw swapgebruik.
+
+### 11.4 Schijfgroei
+
+| | Na de import (§10) | Na concept v1 | Groei |
+|---|---|---|---|
+| Applicatieopslag totaal | 14,9 MB | 75,4 MB | +60,5 MB |
+| ‣ conceptmap `concepten/v1` | — | **46,6 MB, 531 bestanden** | +46,6 MB |
+| — website (`site`) | — | 18,8 MB, 225 bestanden | |
+| — woningmap (generatorinvoer, `woning`) | — | 23,1 MB, 258 bestanden | |
+| — export (`aanlevering`) | — | 4,5 MB, 40 bestanden | |
+| — rapporten en logboek | — | 0,1 MB | |
+| ‣ kwaliteitscontroles van de aanlevering (`controle`, 3×) | — | ±14 MB | +14 MB (tussen de import en het concept) |
+| Database | 9,0 MB | 9,3 MB | +0,3 MB |
+
+**Per woning met één conceptversie:** ±75 MB, ofwel ±14× de PDF. Elke volgende conceptversie kost ±47 MB extra,
+en elke kwaliteitscontrole ±5 MB.
+
+### 11.5 Fouten, vertragingen en herstarts
+
+- Geen fouten in de API- en verwerkerlog. Geen OOM: `OOMKilled = false` en niets in de kernellog.
+- **Geen herstarts.** De containers draaien sinds de uitrol van `1ae95ae`, 12:40 UTC.
+- De wachtrij pakte de aanvraag direct op.
+- **Preview:** 39 verzoeken van de gebruiker beantwoord (200).
+- **Preview zonder aanmelding** (gecontroleerd met de echte link): 404, ook met een vervalst preview- of
+  Rhadix-cookie.
+
+### 11.6 Vergelijking: nulmeting, import en concept
+
+| | Nulmeting (rust) | Brochure-import (§10) | Conceptgeneratie |
+|---|---|---|---|
+| Duur | — | 127,9 s (classificatie 117,4) | 36,2 s (bouw 13,2, kwaliteit 22,0) |
+| Verwerker: CPU | 0,2 % | gem. ±290 % | gem. 125 %, max 381 % |
+| Verwerker: geheugen, piek | 78 MB | **4.096 MB** (grens; grotendeels modelcache) + 301 MB swap | **1.114 MB**, 0 swap |
+| Systeem: beschikbaar, minimum | 6.877 MB | ±2,5 GB (schatting) | 6.166 MB |
+| Schijfgroei | — | +14,9 MB | +60,5 MB (waarvan concept 46,6) |
+
+### 11.7 Beoordeling van de capaciteit voor de twee overige brochures
+
+1. **Conceptgeneratie past ruim.** Piek 1,1 GB van de 4 GB, geen swap, 6,2 GB vrij op de server.
+2. **De brochure-import is het zwaarste moment.** Daar raakte de verwerker zijn grens, vooral door de
+   bestandscache van het SigLIP-model (3,3 GB), plus 301 MB swap. Er was geen fout en de vertraging bleef beperkt.
+3. **Schijf:** ±75 MB per woning met één concept. Voor twee woningen erbij ±150–300 MB, afhankelijk van de
+   PDF-omvang en het aantal versies. Er is 107 GB vrij.
+4. **CPU:** de import gebruikt ±2,9 vCPU, de bouw kort alle 4. Eén verwerking tegelijk (de wachtrij); de
+   kwaliteitscontrole en de interface blijven bruikbaar.
+5. **Conclusie:** de CPX32 is voldoende voor de twee overige brochures en hun concepten.
+
+### 11.8 Advies: processorgrens van 4 GB
+
+**Handhaven.** Twee redenen:
+- de conceptgeneratie gebruikt maximaal 1,1 GB;
+- bij de import bestond de piek grotendeels uit bestandscache, die de kernel terugwint. De 2 GB extra swap
+  ving de rest op, zonder fout.
+
+**Wat nog niet vastligt:** het werkgeheugen tijdens de **beeldclassificatie**. De import van Markt 27 viel vóór de
+start van de fijne meting. Bij de volgende brochure meet de fijne meting automatisch de verdeling tussen werkgeheugen
+en cache.
+
+**Beslisregel na de tweede brochure:**
+- **4 GB blijft** als het werkgeheugen tijdens de classificatie onder de ±3 GB blijft en de swap van de verwerker
+  onder de ±0,5 GB en kortstondig;
+- **anders naar 5 GB** (past op de CPX32: de overige containers gebruiken < 0,2 GB, het OS ±0,6 GB). Dat is een
+  configuratiewijziging; alleen met akkoord.
