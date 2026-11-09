@@ -1,0 +1,14 @@
+[Unit]
+Description=Makelaarsportaal: fijne meting tijdens verwerkingen (elke 2 s, CPU/RAM/swap per container)
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/meting-fijn.sh
+Restart=always
+RestartSec=10
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

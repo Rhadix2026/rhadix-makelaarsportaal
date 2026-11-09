@@ -13,6 +13,7 @@ import { spawn } from 'node:child_process';
 import { cpSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { config } from './config.ts';
+import { VOOR_PUBLICATIE } from './fasen.ts';
 import { generatorCommit, generatorVersie, sharp, valideerManifest } from './generator.ts';
 
 const gen = (rel: string) => import(pathToFileURL(join(config.generator, rel)).href);
@@ -47,7 +48,10 @@ async function concept(k: Concept) {
   const { controleerAanlevering, naarManifest } = await gen('packages/aanlevering/index.mjs');
   const { altUitCategorie } = await gen('packages/ai/index.mjs');
   const a = await controleerAanlevering(k.aanlevering);
-  if (!a.ok) throw new Error(`aanlevering onvolledig: ${a.fouten.join('; ')}`);
+  // De generator controleert ook wat pas vóór publicatie verplicht is (bevestigde publicatierechten). Voor het
+  // interne, afgeschermde concept mag alleen die melding openstaan; elke andere fout blijft de generatie stoppen.
+  const fouten = (a.fouten as string[]).filter((f) => !VOOR_PUBLICATIE.test(f));
+  if (fouten.length) throw new Error(`aanlevering onvolledig: ${fouten.join('; ')}`);
   const { manifest, kopie } = naarManifest(a.gegevens, generatorVersie(), null);
   // De versie die bij het aanmaken van het project is vastgezet.
   if (k.ontwerpsysteem && k.ontwerpsysteem !== '0') manifest.ontwerpsysteem = k.ontwerpsysteem;

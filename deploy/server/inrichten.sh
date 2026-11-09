@@ -64,7 +64,7 @@ ufw default deny incoming && ufw default allow outgoing && ufw allow 22/tcp comm
 bash "$HIER"/cloudflare-ufw.sh   # 443 alleen voor Cloudflare
 
 # Scripts en systemd-timers (worden pas actief na 'systemctl enable --now …', zie LEESMIJ).
-install -m 750 "$HIER"/back-up.sh "$HIER"/hersteltest.sh "$HIER"/meting.sh /usr/local/sbin/
+install -m 750 "$HIER"/back-up.sh "$HIER"/hersteltest.sh "$HIER"/meting.sh "$HIER"/meting-fijn.sh "$HIER"/fijnmeting-rapport.py /usr/local/sbin/
 for f in "$HIER"/systemd/*; do install -m 644 "$f" /etc/systemd/system/; done
 systemctl daemon-reload
 

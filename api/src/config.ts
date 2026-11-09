@@ -51,6 +51,9 @@ export const config = {
   // Eigen wachtwoordlogin: 'aan' (lokale studio), 'tunnel' (online: alleen via een SSH-tunnel naar
   // 127.0.0.1, als noodtoegang wanneer Rhadix niet bereikbaar is) of 'uit'.
   lokaleLogin: (['tunnel', 'uit'].includes(env.STUDIO_LOKALE_LOGIN ?? '') ? env.STUDIO_LOKALE_LOGIN : 'aan') as 'aan' | 'tunnel' | 'uit',
+  // Preview van een concept alleen voor aangemelde gebruikers van het eigen kantoor (online standaard aan;
+  // lokaal, op 127.0.0.1, standaard uit). Zie /api/voorbeeld in server.ts.
+  voorbeeldAfgeschermd: env.STUDIO_VOORBEELD_AFGESCHERMD ? env.STUDIO_VOORBEELD_AFGESCHERMD === '1' : env.STUDIO_COOKIE_SECURE === '1',
 };
 
 /** PEM rechtstreeks, met \n als regelscheiding (één regel in .env), of base64 van de PEM. */

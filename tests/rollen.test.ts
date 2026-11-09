@@ -115,3 +115,34 @@ test('rechten per project voor de interface: gelijk aan wat de API afdwingt', as
   assert.deepEqual((await req('beheer', 'GET', `/api/projecten/${PB}/rechten`)).json(), { produceren: true, kantoorbeheer: true });
   assert.equal((await req('mkB', 'GET', `/api/projecten/${PA}/rechten`)).statusCode, 404);
 });
+
+test('preview van een concept: alleen na aanmelding en voor het eigen kantoor (afgeschermd)', async () => {
+  const { config } = await import('../api/src/config.ts');
+  const { mkdirSync, writeFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const site = join(config.opslag, 'x', 'site');
+  mkdirSync(site, { recursive: true });
+  writeFileSync(join(site, 'index.html'), '<!doctype html><title>Concept</title><link rel="stylesheet" href="stijl.css">');
+  writeFileSync(join(site, 'stijl.css'), 'body{}');
+  const tok = (await pool.query('SELECT voorbeeld_token AS t FROM concept WHERE id = $1', [CA])).rows[0].t;
+  const vorig = config.voorbeeldAfgeschermd;
+  config.voorbeeldAfgeschermd = true;
+  try {
+    const haal = (pad: string, cookie?: string) => app.inject({ method: 'GET', url: `/api/voorbeeld/${tok}/${pad}`, headers: cookie ? { cookie } : {} });
+    assert.equal((await haal('')).statusCode, 404, 'zonder aanmelding: niet gevonden, ook met het juiste token');
+    assert.equal((await haal('stijl.css')).statusCode, 404);
+    assert.equal((await haal('', c.mkB)).statusCode, 404, 'makelaar van een ander kantoor');
+    const eigen = await haal('', c.mk);
+    assert.equal(eigen.statusCode, 200);
+    const sc = String(eigen.headers['set-cookie']);
+    assert.match(sc, new RegExp(`^mp_voorbeeld=\\d+\\.[A-Za-z0-9_-]+; Path=/api/voorbeeld/${tok}/;`));
+    assert.match(sc, /HttpOnly; Secure; SameSite=None/);
+    // Binnen de sandbox: bestanden met alleen het previewcookie (geen inlogcookie).
+    const pc = sc.split(';')[0];
+    assert.equal((await haal('stijl.css', pc)).statusCode, 200);
+    assert.equal((await haal('stijl.css', pc.replace(/.$/, (x) => (x === 'A' ? 'B' : 'A')))).statusCode, 404, 'gewijzigde handtekening');
+    const [naam, waarde] = pc.split('='); const [, sig] = waarde.split('.');
+    assert.equal((await haal('stijl.css', `${naam}=${Math.floor(Date.now() / 1000) - 10}.${sig}`)).statusCode, 404, 'verlopen');
+    assert.equal((await haal('', c.beheer)).statusCode, 200, 'platformbeheer');
+  } finally { config.voorbeeldAfgeschermd = vorig; }
+});

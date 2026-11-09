@@ -57,7 +57,8 @@ function SnelleBeoordeling({ d, profielen, bezig, voerUit }: { d: Data; profiele
   const ok = (code: string) => d.checklist.find((x) => x.code === code)?.ok;
   const open = d.broncontrole.te_beoordelen.filter((g) => g.signalen.includes('tegenstrijdigheid') || g.signalen.includes('terminologie'));
   const nodig = { rechten: !b.rechten?.bevestigd, profiel: !b.profiel, adres: !b.domein && !b.conceptadres, beeld: !ok('openingsbeeld'), foto: b.fotokwaliteit.nodig && !b.fotokwaliteit.akkoord };
-  const kan = akkoord && (!nodig.rechten || (v.rechten ?? '').trim().length >= 3) && (!nodig.profiel || !!v.profiel)
+  // Publicatierechten zijn voor het interne concept optioneel (vóór publicatie verplicht); een ingevulde toelichting telt wel.
+  const kan = akkoord && (!(v.rechten ?? '').trim() || (v.rechten ?? '').trim().length >= 3) && (!nodig.profiel || !!v.profiel)
     && (!nodig.beeld || !!v.openingsbeeld);
   return (
     <section className="kaart snel">
@@ -70,7 +71,7 @@ function SnelleBeoordeling({ d, profielen, bezig, voerUit }: { d: Data; profiele
       <p className="bron">Bronversie: brochure-PDF, import {d.bronovername.bron?.volgnummer}, sha256 <span className="mono">{(d.bronovername.bron?.sha256 ?? '').slice(0, 12)}</span> · {d.broncontrole.telling.overgenomen} gegevens nog niet afzonderlijk gecontroleerd.
         {open.length > 0 && <> Open punten blijven zichtbaar en zijn vóór publicatie verplicht: {open.map((g) => `${g.label} (gebruikt: ${String(g.vastgelegd?.waarde ?? '—')})`).join('; ')}.</>}</p>
       <div className="snel-velden">
-        {nodig.rechten && <div className="veld"><label htmlFor="snel-rechten">Publicatierechten: waarop berust de toestemming?</label>
+        {nodig.rechten && <div className="veld"><label htmlFor="snel-rechten">Publicatierechten (optioneel; verplicht vóór publicatie): waarop berust de toestemming?</label>
           <input id="snel-rechten" placeholder="Bijvoorbeeld: bevestigd door de makelaar per mail" value={v.rechten ?? ''} onChange={zet('rechten')} /></div>}
         {nodig.profiel && <div className="veld"><label htmlFor="snel-profiel">Presentatieprofiel</label>
           <select id="snel-profiel" value={v.profiel} onChange={zet('profiel')}><option value="">Kies een profiel</option>
@@ -231,8 +232,8 @@ export function BeoordelingScherm({ id, ik }: { id: string; ik: Ik }) {
         <h3 className="tussenkop">Beslissingen</h3>
         <div className="beslissingen">
           <div className="beslissing">
-            <div className="beslissing-kop">Publicatierechten {b.rechten?.bevestigd ? <Badge toon="goed">bevestigd</Badge> : <Badge toon="fout">open</Badge>}</div>
-            {b.rechten?.bevestigd ? <p className="bron">{b.rechten.toelichting} · {datum(b.rechten.op)}</p> : <p className="bron">Mogen de foto's en teksten gepubliceerd worden? Vermeld waarop dat berust.</p>}
+            <div className="beslissing-kop">Publicatierechten {b.rechten?.bevestigd ? <Badge toon="goed">bevestigd</Badge> : <Badge toon="let-op">vóór publicatie</Badge>}</div>
+            {b.rechten?.bevestigd ? <p className="bron">{b.rechten.toelichting} · {datum(b.rechten.op)}</p> : <p className="bron">Mogen de foto's en teksten gepubliceerd worden? Vermeld waarop dat berust. Blokkeert het interne concept niet; verplicht vóór publicatie.</p>}
             {beheer && (b.rechten?.bevestigd
               ? <button type="button" className="tekstknop" disabled={bezig} onClick={() => beslis('rechten', { bevestigd: false }, 'Bevestiging ingetrokken.')}>Bevestiging intrekken</button>
               : <div className="inline-form"><input aria-label="Toelichting publicatierechten" placeholder="Bijvoorbeeld: bevestigd door de makelaar per mail" value={veld.rechten ?? ''} onChange={zet('rechten')} />

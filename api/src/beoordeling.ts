@@ -100,8 +100,9 @@ export function meldingen(o: {
   for (const g of o.gegevens.filter((x) => !x.vastgelegd && !['adres', 'plaats'].includes(x.sleutel))) add('aandacht', `Ontbreekt: ${g.label}`, 'Niet in de brochure gevonden.', g.sleutel);
   if (!o.project.profiel) add('blokkerend', 'Presentatieprofiel nog niet gekozen', o.imp.rapport.gegevens?.profiel ? `Voorstel uit de brochure: '${o.imp.rapport.gegevens.profiel.waarde}'.` : undefined);
   for (const f of o.imp.controle?.fouten ?? []) {
-    if (/rechten\.bevestigd/.test(f)) add('blokkerend', 'Publicatierechten nog niet bevestigd', 'Bevestig dat foto\'s en teksten gepubliceerd mogen worden (in de broncontrole).');
-    else if (/site\.canonical/.test(f)) { if (!o.project.domein) add('blokkerend', 'Adres van de website nog niet vastgelegd', 'Vul het gewenste domein in bij het project.'); }
+    // Fase-afhankelijk: verplicht vóór publicatie, niet voor het interne (afgeschermde) concept.
+    if (/rechten\.bevestigd/.test(f)) add('aandacht', 'Publicatierechten nog niet bevestigd', 'Verplicht vóór publicatie: bevestig dat foto\'s en teksten gepubliceerd mogen worden. Blokkeert het interne concept niet.');
+    else if (/site\.canonical/.test(f)) { if (!o.project.domein) add('aandacht', 'Definitief websiteadres nog niet vastgelegd', 'Verplicht vóór publicatie; het interne concept krijgt een tijdelijk adres.'); }
     else if (/geen liggende foto/.test(f)) add('blokkerend', 'Geen geschikt openingsbeeld', f.replace(/^.*?: /, ''));
     else add('blokkerend', 'Controle generator', f);
   }

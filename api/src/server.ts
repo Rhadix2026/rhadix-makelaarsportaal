@@ -11,7 +11,8 @@ import { config, ROOT } from './config.ts';
 import { alsGebruiker, audit, databaseStatus, migreer, pool } from './db.ts';
 import { generatorStatus, profielCatalogus, profielen, standaardOntwerpsysteem } from './generator.ts';
 import { COOKIE, beeindigSessie, leesCookie, meldAan, sessieCookie, sessieGebruiker, wisCookie } from './auth.ts';
-import { meldAanViaRhadix, SSO_MELDING, ssoActief, wisSsoCache, type Huisstijl } from './rhadixsso.ts';
+import { meldAanViaRhadix, SSO_MELDING, ssoActief, wisSsoCache, type Huisstijl, type SsoFout } from './rhadixsso.ts';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { leesKantoor, lijstKantoren, maakKantoor, valideerKantoor, wijzigKantoor } from './kantoren.ts';
 import { bulkGoedkeuren, conflictVoor, extractieVoor, herstelVerwerkingen, leverAan, overzicht, slaOp, trekIn, vraagVerwerking, wekVerwerker } from './aanlevering.ts';
 import { bewerkGegeven } from './gegevens.ts';
@@ -56,6 +57,25 @@ function dbFout(e: unknown, reply: FastifyReply) {
   throw e;
 }
 
+// ── Previewcookie: toegang tot de bestanden van één concept, na aanmelding (zie /api/voorbeeld) ──
+// Ondertekend met een geheim dat alleen in dit proces bestaat (na een herstart opnieuw aanmelden),
+// 2 uur geldig, alleen voor het pad van dit concept. SameSite=None: de sandbox heeft een anonieme
+// herkomst; het cookie blijft first-party (zelfde site) en is HttpOnly en Secure.
+const VOORBEELD_GEHEIM = randomBytes(32);
+const VOORBEELD_DUUR_S = 2 * 60 * 60;
+const VOORBEELD_COOKIE = 'mp_voorbeeld';
+const voorbeeldHandtekening = (tok: string, tot: number) => createHmac('sha256', VOORBEELD_GEHEIM).update(`${tok}.${tot}`).digest('base64url');
+function voorbeeldCookie(tok: string) {
+  const tot = Math.floor(Date.now() / 1000) + VOORBEELD_DUUR_S;
+  return `${VOORBEELD_COOKIE}=${tot}.${voorbeeldHandtekening(tok, tot)}; Path=/api/voorbeeld/${tok}/; Max-Age=${VOORBEELD_DUUR_S}; HttpOnly; Secure; SameSite=None`;
+}
+function geldigVoorbeeldCookie(req: FastifyRequest, tok: string) {
+  const [tot, sig] = (leesCookie(req.headers.cookie, VOORBEELD_COOKIE) ?? '').split('.');
+  if (!tot || !sig || !(Number(tot) > Date.now() / 1000)) return false;
+  const verwacht = Buffer.from(voorbeeldHandtekening(tok, Number(tot))), echt = Buffer.from(sig);
+  return verwacht.length === echt.length && timingSafeEqual(verwacht, echt);
+}
+
 export function bouwApp() {
   const app = Fastify({ logger: { level: 'warn' }, bodyLimit: 64 * 1024 });
   app.decorateRequest('gebruiker', '');
@@ -72,25 +92,30 @@ export function bouwApp() {
     if (req.method !== 'GET' && origin && !toegestaneHerkomst.has(origin)) return reply.code(403).send({ fout: 'Onbekende herkomst' });
     if (req.url === '/api/inloggen' || req.url === '/api/gezond' || req.url === '/api/inlogopties') return;
     // Preview van een concept: toegang via het geheime voorbeeldtoken in het pad (alleen lezen).
+    // Preview van een concept: eigen toegangscontrole in de route (aanmelding of previewcookie).
     if (req.method === 'GET' && req.url.startsWith('/api/voorbeeld/')) return;
-    // Noodtoegang: de eigen sessie, alleen waar de eigen login is toegestaan.
-    const g = lokaleLoginToegestaan(req) ? await sessieGebruiker(leesCookie(req.headers.cookie)) : null;
-    if (g) { req.gebruiker = g; return; }
-    // Centrale Rhadix-login: het token uit het cookie op .rhadix.nl, bij elk verzoek gecontroleerd.
-    const token = ssoActief() ? leesCookie(req.headers.cookie, config.sso.cookie) : undefined;
-    if (token) {
-      const r = await meldAanViaRhadix(token);
-      if (r.ok) {
-        // Het Rhadix-cookie gaat naar elke rhadix.nl-app (SameSite=Lax); wijzigingen daarom alleen met
-        // een expliciete, eigen herkomst: een andere rhadix.nl-app kan hier niets namens de gebruiker doen.
-        if (req.method !== 'GET' && !(origin && toegestaneHerkomst.has(origin))) return reply.code(403).send({ fout: 'Onbekende herkomst' });
-        req.gebruiker = r.gebruikerId; req.huisstijl = r.huisstijl;
-        return;
-      }
-      if (r.fout !== 'ongeldig') return reply.code(403).send({ fout: SSO_MELDING[r.fout], sso: r.fout });
+    const a = await aanmelding(req);
+    if (a && 'gebruiker' in a) {
+      // Het Rhadix-cookie gaat naar elke rhadix.nl-app (SameSite=Lax); wijzigingen daarom alleen met
+      // een expliciete, eigen herkomst: een andere rhadix.nl-app kan hier niets namens de gebruiker doen.
+      if (a.sso && req.method !== 'GET' && !(origin && toegestaneHerkomst.has(origin))) return reply.code(403).send({ fout: 'Onbekende herkomst' });
+      req.gebruiker = a.gebruiker; req.huisstijl = a.huisstijl;
+      return;
     }
+    if (a) return reply.code(403).send({ fout: SSO_MELDING[a.fout], sso: a.fout });
     return reply.code(401).send({ fout: 'Niet ingelogd' });
   });
+
+  /** Wie is dit? Noodtoegang (eigen sessie, alleen waar toegestaan) of de centrale Rhadix-login. */
+  async function aanmelding(req: FastifyRequest): Promise<{ gebruiker: string; huisstijl: Huisstijl | null; sso: boolean } | { fout: SsoFout } | null> {
+    const g = lokaleLoginToegestaan(req) ? await sessieGebruiker(leesCookie(req.headers.cookie)) : null;
+    if (g) return { gebruiker: g, huisstijl: null, sso: false };
+    const token = ssoActief() ? leesCookie(req.headers.cookie, config.sso.cookie) : undefined;
+    if (!token) return null;
+    const r = await meldAanViaRhadix(token);
+    if (r.ok) return { gebruiker: r.gebruikerId, huisstijl: r.huisstijl, sso: true };
+    return r.fout === 'ongeldig' ? null : { fout: r.fout };
+  }
 
   const alleenPlatform = async (req: FastifyRequest, reply: FastifyReply) => {
     if (!(await ik(req.gebruiker)).platformbeheer) return reply.code(403).send({ fout: 'Alleen voor platformbeheer' });
@@ -444,9 +469,20 @@ export function bouwApp() {
 
   // Lokale preview: de gegenereerde site, in een afgeschermde omgeving (sandbox, geen cookies, geen referrer, niet indexeren).
   app.get<{ Params: { token: string; '*': string } }>('/api/voorbeeld/:token/*', async (req, reply) => {
-    if (!/^[A-Za-z0-9_-]{40,64}$/.test(req.params.token)) return reply.code(404).send({ fout: 'Niet gevonden' });
-    const k = (await pool.query('SELECT map FROM concept WHERE voorbeeld_token = $1', [req.params.token])).rows[0];
-    const b = k && conceptBestand(k.map, req.params['*']);
+    const tok = req.params.token;
+    if (!/^[A-Za-z0-9_-]{40,64}$/.test(tok)) return reply.code(404).send({ fout: 'Niet gevonden' });
+    let map: string | undefined;
+    if (!config.voorbeeldAfgeschermd || geldigVoorbeeldCookie(req, tok)) {
+      map = (await pool.query('SELECT map FROM concept WHERE voorbeeld_token = $1', [tok])).rows[0]?.map;
+    } else {
+      // Afgeschermd: alleen een aangemelde gebruiker die het concept mag zien (RLS: eigen kantoor of platform).
+      const a = await aanmelding(req);
+      if (a && 'gebruiker' in a) map = await alsGebruiker(a.gebruiker, async (c) => (await c.query('SELECT map FROM concept WHERE voorbeeld_token = $1', [tok])).rows[0]?.map);
+      // De preview draait in een sandbox (anonieme herkomst): de browser stuurt daar het gewone inlogcookie niet
+      // mee. Daarom krijgt de aangemelde gebruiker een kortlevend, ondertekend cookie voor alleen dit concept.
+      if (map) reply.header('set-cookie', voorbeeldCookie(tok));
+    }
+    const b = map && conceptBestand(map, req.params['*']);
     if (!b) return reply.code(404).send({ fout: 'Niet gevonden' });
     reply.header('content-security-policy', "sandbox allow-scripts; frame-ancestors 'self'").header('referrer-policy', 'no-referrer')
       .header('x-robots-tag', 'noindex, nofollow').header('x-content-type-options', 'nosniff').header('cache-control', 'private, max-age=300');

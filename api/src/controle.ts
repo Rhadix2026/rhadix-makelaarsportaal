@@ -18,6 +18,7 @@ import { generatorCommit, generatorModule, generatorVersie, huisstijlFuncties, p
 import { laatsteImport, overzicht } from './aanlevering.ts';
 import { opslagPad } from './opslag.ts';
 import { deelControleIn } from './indeling.ts';
+import { VOOR_PUBLICATIE } from './fasen.ts';
 
 type Rij = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -121,7 +122,9 @@ export async function exporteer(c: pg.PoolClient, projectId: string, map: string
     makelaar: { naam: k.merknaam, ...(k.adresregels?.length ? { adresregels: k.adresregels } : {}), ...(telefoon ? { telefoon, telefoon_int: '+31' + telefoon.replace(/\D/g, '').replace(/^31/, '').replace(/^0/, '') } : {}),
       ...(k.email ? { email: k.email } : {}), ...(k.website ? { website: k.website } : {}), ...(logo ? { logo } : {}) },
     site: {
-      ...(p.domein ? { canonical: `https://${p.domein}/` } : p.conceptadres ? { canonical: `https://${p.slug}.invalid/` } : {}),
+      // Zonder definitief domein krijgt het interne concept altijd het tijdelijke, onbereikbare adres
+      // <slug>.invalid (het concept wordt niet gepubliceerd). Het definitieve domein is verplicht vóór publicatie.
+      canonical: p.domein ? `https://${p.domein}/` : `https://${p.slug}.invalid/`,
       titel: [p.adres ?? p.naam, p.plaats].filter(Boolean).join(', '), index: false, ...(disclaimer ? { disclaimer } : {}),
     },
     feiten,
@@ -177,7 +180,7 @@ export async function kwaliteitscontrole(c: pg.PoolClient, gebruiker: string, pr
 // ── Indeling van de controleresultaten ──────────────────────────────────────
 const INFO = /slot met titel|wordt alleen tekst|standaardzin|alleen in "Alle foto's"|geen # hero/;
 const VERTAAL: [RegExp, string][] = [
-  [/rechten\.bevestigd ontbreekt/, 'Publicatierechten nog niet bevestigd'],
+  [/rechten\.bevestigd ontbreekt/, 'Publicatierechten nog niet bevestigd (verplicht vóór publicatie; blokkeert het interne concept niet)'],
   [/site\.canonical/, 'Adres van de website ontbreekt (domein of tijdelijk conceptadres)'],
   [/'profiel' ontbreekt/, 'Presentatieprofiel ontbreekt'],
   [/makelaar heeft geen e-mail en geen telefoon/, 'Het kantoor heeft geen telefoon en geen e-mail: vul de kantoorgegevens aan (op het aanleverscherm kan dat uit de brochure)'],
@@ -193,7 +196,7 @@ const leesbaar = (f: string) => { for (const [rx, t] of VERTAAL) if (rx.test(f))
 export function deelIn(r: Rij | null) {
   const uit = { blokkerend: [] as { bron: string; tekst: string }[], aandacht: [] as { bron: string; tekst: string }[], info: [] as { bron: string; tekst: string }[] };
   if (!r) return uit;
-  for (const f of r.aanlevering?.fouten ?? []) uit.blokkerend.push({ bron: 'aanleveringscontrole', tekst: leesbaar(f) });
+  for (const f of r.aanlevering?.fouten ?? []) (VOOR_PUBLICATIE.test(f) ? uit.aandacht : uit.blokkerend).push({ bron: 'aanleveringscontrole', tekst: leesbaar(f) });
   for (const w of r.aanlevering?.waarschuwingen ?? []) (INFO.test(w) || /kleiner dan \d+ px/.test(w) ? uit.info : uit.aandacht).push({ bron: 'aanleveringscontrole', tekst: w.replace(/^teksten\.md: /, 'Teksten: ') });
   for (const f of r.manifest?.fouten ?? []) if (!/canonical/.test(f) || !(r.aanlevering?.fouten ?? []).some((x: string) => /canonical/.test(x))) uit.blokkerend.push({ bron: 'manifestschema', tekst: f });
   for (const f of r.feiten?.fouten ?? []) uit.blokkerend.push({ bron: 'feitencontrole', tekst: pad(f) });
@@ -219,7 +222,7 @@ export const OVERNAME_VERKLARING = 'Neem de aangeleverde brochuregegevens en ove
 export async function beoordeling(c: pg.PoolClient, projectId: string) {
   const o = await overzicht(c, projectId);
   if (!o) return null;
-  const p = (await c.query('SELECT rechten, conceptadres, openingsbeeld_id, vrijgave, domein, profiel, status FROM project WHERE id = $1', [projectId])).rows[0];
+  const p = (await c.query('SELECT slug, rechten, conceptadres, openingsbeeld_id, vrijgave, domein, profiel, status FROM project WHERE id = $1', [projectId])).rows[0];
   const vinger = await vingerafdruk(c, projectId);
   const kc = (await c.query(`SELECT id, volgnummer, klaar_op, duur_ms, rapport, vingerafdruk, generator_commit, aangevraagd_door FROM verwerking
     WHERE project_id = $1 AND soort = 'kwaliteitscontrole' ORDER BY volgnummer DESC LIMIT 1`, [projectId])).rows[0] ?? null;
@@ -284,9 +287,13 @@ export async function beoordeling(c: pg.PoolClient, projectId: string) {
     punt(2, 'terminologie', 'Terminologische afwijkingen beoordeeld', telling.opgelost - telling.inhoudelijk_opgelost === telling.tegenstrijdig - telling.inhoudelijk,
       'Beoordeel de mogelijke terminologische afwijking(en).', false),
     punt(2, 'verplicht', 'Straat, huisnummer en plaats vastgelegd', ['adres', 'plaats'].every((s) => g.some((x) => x.sleutel === s && x.vastgelegd && x.vastgelegd.status !== 'afgewezen')), 'Vul straat, huisnummer en plaats aan.'),
-    punt(3, 'rechten', 'Publicatierechten foto\'s en teksten bevestigd', !!p.rechten?.bevestigd, 'Bevestig de publicatierechten, met een korte toelichting.'),
+    // Fase-afhankelijk: het interne concept is afgeschermd en wordt niet gepubliceerd. Publicatierechten en het
+    // definitieve domein blokkeren het daarom niet; vóór publicatie zijn beide verplicht.
+    punt(3, 'rechten', 'Publicatierechten foto\'s en teksten bevestigd', !!p.rechten?.bevestigd,
+      'Nog niet bevestigd: blokkeert het interne concept niet. Vóór publicatie verplicht, met een korte toelichting.', false),
     punt(3, 'profiel', 'Presentatieprofiel gekozen', !!p.profiel, 'Kies het presentatieprofiel.'),
-    punt(3, 'websiteadres', 'Websiteadres vastgelegd', !!p.domein || p.conceptadres, 'Vul het domein in of kies een tijdelijk conceptadres.'),
+    punt(3, 'websiteadres', 'Definitief websiteadres vastgelegd', !!p.domein,
+      `Het interne concept krijgt het tijdelijke adres ${p.slug}.invalid. Vóór publicatie is het definitieve domein verplicht.`, false),
     punt(3, 'openingsbeeld', 'Openingsbeeld gekozen', !!hero && geschiktHero.some((b) => b.id === hero.id), geschiktHero.length ? 'Kies het openingsbeeld uit de geschikte foto\'s.' : `Geen foto is geschikt (liggend, ≥ ${heroNorm} px): lever een origineel aan.`),
     punt(3, 'fotokwaliteit', 'Fotokwaliteit beoordeeld', fotoAkkoord, 'Originele foto\'s ontbreken; het concept gebruikt de brochurebeelden.', false),
     punt(3, 'kwaliteitscontrole', 'Kwaliteitscontrole uitgevoerd op de huidige stand, zonder blokkades', actueel && resultaat.blokkerend.length === 0,
@@ -349,6 +356,11 @@ export async function uitgangspunten(c: pg.PoolClient, projectId: string) {
     onbevestigd: g.filter((x) => x.vastgelegd?.status === 'overgenomen').map((x) => x.label),
     ontbrekend: g.filter((x) => !x.vastgelegd).map((x) => x.label),
     gecontroleerd: st.broncontrole.telling.gecontroleerd + st.broncontrole.telling.gecorrigeerd,
+    // Intern concept: wat vóór publicatie nog verplicht is.
+    voor_publicatie: {
+      publicatierechten: st.beslissingen.rechten?.bevestigd ? 'bevestigd' : 'niet bevestigd',
+      websiteadres: st.beslissingen.domein ? `https://${st.beslissingen.domein}/` : `tijdelijk: https://${st.project.slug}.invalid/ (niet bereikbaar)`,
+    },
   };
 }
 
@@ -429,7 +441,8 @@ export async function snelleBeoordeling(c: pg.PoolClient, gebruiker: string, pro
   const bs = st.beslissingen;
   const plan: [string, Rij, string][] = [];
   if (!st.bronovername.geldig) plan.push(['bronovername', { bevestigd: true, motivering: tekst(b.motivering) || 'snelle beoordeling' }, 'broninformatie overgenomen als uitgangspunt']);
-  if (!bs.rechten?.bevestigd) {
+  // Publicatierechten: optioneel voor het interne concept (vóór publicatie verplicht). Alleen bevestigen met toelichting.
+  if (!bs.rechten?.bevestigd && tekst(b.rechten)) {
     if (tekst(b.rechten).length < 3) return { fout: 'waarde' as const, melding: 'Licht toe waarop de publicatierechten berusten' };
     plan.push(['rechten', { bevestigd: true, motivering: tekst(b.rechten) }, 'publicatierechten bevestigd']);
   }

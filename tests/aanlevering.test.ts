@@ -172,10 +172,11 @@ test('brochure-import Markt 27: zelfde resultaat als de generator, gegevens aang
   assert.equal(niveau(/^Inhoudelijke tegenstrijdigheid: Kamers/), 'aandacht');
   assert.equal(o.meldingen.find((m: { titel: string }) => /^Inhoudelijke tegenstrijdigheid: Kamers/.test(m.titel)).actie, 'publicatie');
   assert.match(o.meldingen.find((m: { titel: string }) => /^Inhoudelijke tegenstrijdigheid: Kamers/.test(m.titel)).tekst, /Het concept gebruikt '\d+' als onbevestigd/);
-  assert.equal(o.meldingen.find((m: { titel: string }) => /^Publicatierechten/.test(m.titel)).actie, 'conceptgeneratie');
+  // Fase-afhankelijk: publicatierechten zijn verplicht vóór publicatie, niet voor het interne concept.
+  assert.equal(o.meldingen.find((m: { titel: string }) => /^Publicatierechten/.test(m.titel)).actie, 'publicatie');
   assert.equal(niveau(/^Mogelijke terminologische afwijking: Buitenruimte/), 'aandacht');
   assert.equal(niveau(/^Afwijking van de brochure: Straat/), 'aandacht');
-  assert.equal(niveau(/^Publicatierechten/), 'blokkerend');
+  assert.equal(niveau(/^Publicatierechten/), 'aandacht', 'vóór publicatie verplicht, blokkeert het interne concept niet');
   assert.equal(niveau(/^Vraagprijs gevonden/), 'info');
   assert.equal(niveau(/onder de publicatienorm/), 'aandacht');
   assert.ok(o.meldingen.every((m: { niveau: string }) => ['blokkerend', 'aandacht', 'info'].includes(m.niveau)));

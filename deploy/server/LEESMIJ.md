@@ -161,3 +161,14 @@ gezondheidscontrole na 90 s niet groen, dan gaat de vorige tag automatisch terug
   ```
   Een noodaccount maken (het wachtwoord wordt verborgen gevraagd):
   `… exec api node_modules/.bin/tsx api/src/beheer.ts maak --email <adres> --naam "<naam>" --platformbeheer`
+
+## 8. Fijne meting tijdens verwerkingen
+
+- **Wat:** `makelaarsportaal-meting-fijn.service` meet elke 2 s, maar alleen zolang de verwerker werkt (plus 30 s
+  erna), rechtstreeks uit de cgroups. Per container: CPU, geheugen, swap, werkgeheugen (`anon`) en
+  bestandscache (`file`). Systeembreed: CPU, het beschikbare geheugen en swap.
+  - Uitvoer: `/var/log/makelaarsportaal/fijn.csv`.
+  - Aanzetten: `systemctl enable --now makelaarsportaal-meting-fijn.service`, met dezelfde drop-in
+    `omgeving.conf` als de 5-minutenmeting.
+- **Rapport per fase:** `fijnmeting-rapport.py --sinds <datum>`. Het splitst elke verwerking op de vastgelegde
+  staptijden in brochure-import, beeldclassificatie en conceptgeneratie.

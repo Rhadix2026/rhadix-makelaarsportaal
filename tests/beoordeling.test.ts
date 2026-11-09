@@ -54,13 +54,19 @@ test('Markt 27: van aanlevering via broncontrole en kwaliteitscontrole naar vrij
   assert.equal(b.broncontrole.telling.opgelost, 0);
   assert.equal(b.klaar, false);
   const v0 = await beslis('vrijgave', {});
-  assert.equal(v0.statusCode, 409); assert.ok(v0.json().open.length >= 5, 'vrijgave geweigerd met de openstaande punten');
+  assert.equal(v0.statusCode, 409); assert.ok(v0.json().open.length >= 3, 'vrijgave geweigerd met de openstaande punten');
+  // Publicatierechten en het definitieve domein blokkeren het interne concept niet (vóór publicatie verplicht).
+  const openCodes = v0.json().open.map((x: { code: string }) => x.code);
+  assert.ok(!openCodes.includes('rechten') && !openCodes.includes('websiteadres'), openCodes.join(','));
+  assert.ok(openCodes.includes('profiel') && openCodes.includes('openingsbeeld'), openCodes.join(','));
 
   // Kwaliteitscontrole vóór de beslissingen: blokkades zichtbaar.
   assert.equal((await req('beheer', 'POST', `/api/projecten/${P}/kwaliteitscontrole`)).statusCode, 201);
   b = await st();
   const blok = b.kwaliteit.resultaat.blokkerend.map((x: { tekst: string }) => x.tekst).join(' | ');
-  assert.match(blok, /Publicatierechten/); assert.match(blok, /Adres van de website/); assert.match(blok, /Presentatieprofiel/);
+  assert.match(blok, /Presentatieprofiel/);
+  assert.doesNotMatch(blok, /Publicatierechten|Adres van de website/, 'geen blokkade voor het interne concept');
+  assert.match(b.kwaliteit.resultaat.aandacht.map((x: { tekst: string }) => x.tekst).join(' | '), /Publicatierechten nog niet bevestigd \(verplicht vóór publicatie/, 'melding blijft zichtbaar');
   assert.equal(b.kwaliteit.actueel, true);
 
   // Menselijke beoordeling: bulk, besluiten, afwijzen met motivering, rest afzonderlijk.
@@ -95,7 +101,8 @@ test('Markt 27: van aanlevering via broncontrole en kwaliteitscontrole naar vrij
   b = await st();
   assert.deepEqual(b.kwaliteit.resultaat.blokkerend, []);
   assert.ok(b.kwaliteit.resultaat.info.some((x: { tekst: string }) => /€ 158.*vastgelegd als feit 'Bijdrage VvE'/.test(x.tekst)), 'VvE-bedrag vastgelegd als feit: informatie, blokkeert niet');
-  assert.ok(b.checklist.every((x: { ok: boolean }) => x.ok), JSON.stringify(b.checklist.filter((x: { ok: boolean }) => !x.ok)));
+  // Alle verplichte punten in orde; alleen het definitieve domein (vóór publicatie) staat nog open.
+  assert.deepEqual(b.checklist.filter((x: { ok: boolean }) => !x.ok).map((x: { code: string; verplicht: boolean }) => [x.code, x.verplicht]), [['websiteadres', false]]);
   assert.equal(b.fasen[3].status, 'open');
 
   // De export volgt het aanleverformaat van de generator.

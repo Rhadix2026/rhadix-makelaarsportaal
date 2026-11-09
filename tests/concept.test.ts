@@ -59,9 +59,10 @@ test('Markt 27: vrijgave met alleen de verplichte punten, concept v1, preview, v
   const besluiten = async () => (await pool.query('SELECT count(*)::int AS n FROM besluit WHERE project_id = $1', [P])).rows[0].n;
   const n0 = await besluiten();
   assert.equal((await snel({ rechten: 'Toestemming Linde' })).statusCode, 400, 'zonder bevestiging van de overname');
-  assert.equal((await snel({ overnemen: true })).statusCode, 400, 'rechten zonder toelichting');
+  assert.equal((await snel({ overnemen: true, rechten: 'x' })).statusCode, 400, 'rechten met een te korte toelichting');
   assert.equal(await besluiten(), n0, 'geweigerd: niets vastgelegd');
-  const s1 = await snel({ overnemen: true, rechten: 'Toestemming Linde' });
+  // Zonder bevestigde publicatierechten en zonder domein: het interne concept mag (vóór publicatie verplicht).
+  const s1 = await snel({ overnemen: true });
   assert.equal(s1.statusCode, 200, s1.body);
   assert.deepEqual(s1.json().open, []);
   b = s1.json().beoordeling;
@@ -75,7 +76,10 @@ test('Markt 27: vrijgave met alleen de verplichte punten, concept v1, preview, v
   for (const code of ['gegevens', 'tegenstrijdigheden', 'terminologie', 'fotokwaliteit']) {
     assert.equal(punt(b, code).ok, false, `${code} staat nog open`); assert.equal(punt(b, code).verplicht, false, `${code} blokkeert niet`);
   }
-  for (const o of ['bronovername', 'rechten', 'profiel', 'websiteadres', 'openingsbeeld', 'vrijgave']) assert.ok(b.besluiten.some((x: { onderwerp: string }) => x.onderwerp === o), `besluit ${o} in het log`);
+  assert.equal(punt(b, 'rechten').ok, false); assert.equal(punt(b, 'rechten').verplicht, false, 'rechten blokkeren het interne concept niet');
+  assert.equal(punt(b, 'websiteadres').verplicht, false, 'het definitieve domein blokkeert het interne concept niet');
+  assert.ok(!b.besluiten.some((x: { onderwerp: string }) => x.onderwerp === 'rechten'), 'rechten niet stilzwijgend bevestigd');
+  for (const o of ['bronovername', 'profiel', 'websiteadres', 'openingsbeeld', 'vrijgave']) assert.ok(b.besluiten.some((x: { onderwerp: string }) => x.onderwerp === o), `besluit ${o} in het log`);
   assert.ok(b.kwaliteit.resultaat.info.some((x: { tekst: string }) => /vastgelegd als feit 'Bijdrage VvE'/.test(x.tekst)), 'VvE-bedrag als informatie');
   assert.equal(b.kwaliteit.indeling.samenvatting.length, 4);
 
@@ -105,6 +109,10 @@ test('Markt 27: vrijgave met alleen de verplichte punten, concept v1, preview, v
   assert.equal(kamers.soort, 'tegenstrijdigheid'); assert.equal(kamers.verificatie, 'onbevestigd'); assert.ok(kamers.gebruikte_waarde);
   const woning = JSON.parse(readFileSync(join(config.opslag, v1.map, 'aanlevering', 'woning.json'), 'utf8'));
   assert.equal(woning.feiten.find((f: { sleutel: string }) => f.sleutel === 'kamers').verificatie, 'onbevestigd', 'niet als opgelost gemarkeerd');
+  // Intern concept zonder bevestigde rechten: eerlijk vastgelegd (niet bevestigd), tijdelijk onbereikbaar adres.
+  assert.equal(woning.rechten.bevestigd, false);
+  assert.equal(woning.site.canonical, 'https://linde-makelaars-markt-27.invalid/');
+  assert.deepEqual(v1.uitgangspunten.voor_publicatie, { publicatierechten: 'niet bevestigd', websiteadres: 'tijdelijk: https://linde-makelaars-markt-27.invalid/ (niet bereikbaar)' });
   assert.ok(v1.indeling.samenvatting.length === 4 && v1.indeling.meldingen.every((m: { actie: string }) => m.actie !== 'conceptgeneratie'));
   const site1 = join(config.opslag, v1.map, 'site', 'index.html');
   const html = readFileSync(site1, 'utf8');
