@@ -8,6 +8,7 @@ import { Badge, Kaart, type Toon } from './onderdelen/basis.tsx';
 import { Fasebalk, useBeoordeling } from './Beoordeling.tsx';
 import { Meldingenoverzicht } from './onderdelen/Meldingen.tsx';
 import { useActiviteit } from './onderdelen/activiteit.ts';
+import { useRechten } from './onderdelen/rechten.ts';
 
 const APPARATEN = [{ naam: 'Desktop', breedte: 1440, hoogte: 900 }, { naam: 'Tablet', breedte: 768, hoogte: 1024 }, { naam: 'Mobiel', breedte: 390, hoogte: 844 }];
 const STATUS: Record<string, [Toon, string]> = { te_beoordelen: ['let-op', 'te beoordelen'], geaccepteerd: ['goed', 'geaccepteerd'], verbeterpunten: ['fout', 'verbeterpunten'] };
@@ -152,7 +153,8 @@ export function ConceptScherm({ id, ik, versie }: { id: string; ik: Ik; versie?:
   const [punten, setPunten] = useState<{ onderdeel: string; tekst: string }[]>([{ onderdeel: 'algemeen', tekst: '' }]);
   const [motivering, setMotivering] = useState('');
   const fase = useBeoordeling(id);
-  const beheer = ik.platformbeheer;
+  const rechten = useRechten(id);
+  const beheer = rechten.produceren;
 
   const laad = useCallback(async () => {
     try { const r = await api<ConceptenOverzicht>(`/api/projecten/${id}/concepten`); setD(r); return r; }
@@ -236,7 +238,7 @@ export function ConceptScherm({ id, ik, versie }: { id: string; ik: Ik; versie?:
             <h2>Beoordeling van v{k.versie}</h2>
             <p><Badge toon={STATUS[k.status][0]}>{STATUS[k.status][1]}</Badge> {k.beoordeeld_op ? `· ${datum(k.beoordeeld_op)}${k.beoordeeld_door_naam ? ` door ${k.beoordeeld_door_naam}` : ''}` : ''}{k.motivering ? ` · ${k.motivering}` : ''}</p>
             {k.verbeterpunten.length > 0 && <ul className="checklist">{k.verbeterpunten.map((p, i) => <li key={i} className="open"><span className="vink">!</span><span><strong>{p.onderdeel}</strong> {p.tekst} <span className="bron">({datum(p.op)})</span></span></li>)}</ul>}
-            {beheer && <>
+            {rechten.kantoorbeheer && <>
               <h3 className="tussenkop">Verbeterpunten vastleggen</h3>
               {punten.map((p, i) => (
                 <div key={i} className="inline-form" style={{ marginBottom: 6 }}>

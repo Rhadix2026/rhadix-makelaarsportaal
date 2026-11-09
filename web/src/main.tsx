@@ -10,6 +10,7 @@ import { Dashboard, ProjectDetail, ProjectFormulier } from './Projecten.tsx';
 import { AanleverScherm } from './Aanlevering.tsx';
 import { BeoordelingScherm } from './Beoordeling.tsx';
 import { ConceptScherm } from './Concepten.tsx';
+import { magProjectenAanmaken } from './onderdelen/rechten.ts';
 
 function useHash() {
   const [hash, setHash] = useState(location.hash || '#/projecten');
@@ -24,11 +25,11 @@ function useHash() {
 function Scherm({ hash, ik }: { hash: string; ik: Ik }) {
   let m;
   if (hash === '#/systeem') return ik.platformbeheer ? <StatusPagina /> : <p className="melding melding-fout">Alleen voor platformbeheer.</p>;
-  if (hash === '#/kantoren/nieuw') return ik.platformbeheer ? <KantoorFormulier /> : <p className="melding melding-fout">Alleen voor platformbeheer.</p>;
-  if ((m = hash.match(/^#\/kantoren\/([0-9a-f-]{36})\/bewerken$/))) return <KantoorFormulier id={m[1]} />;
+  if (hash === '#/kantoren/nieuw') return ik.platformbeheer ? <KantoorFormulier platform /> : <p className="melding melding-fout">Alleen voor platformbeheer.</p>;
+  if ((m = hash.match(/^#\/kantoren\/([0-9a-f-]{36})\/bewerken$/))) return <KantoorFormulier id={m[1]} platform={ik.platformbeheer} />;
   if ((m = hash.match(/^#\/kantoren\/([0-9a-f-]{36})$/))) return <KantoorDetail id={m[1]} ik={ik} />;
   if (hash.startsWith('#/kantoren')) return <KantorenLijst ik={ik} />;
-  if (hash === '#/projecten/nieuw') return ik.platformbeheer ? <ProjectFormulier /> : <p className="melding melding-fout">Alleen voor platformbeheer.</p>;
+  if (hash === '#/projecten/nieuw') return magProjectenAanmaken(ik) ? <ProjectFormulier /> : <p className="melding melding-fout">U heeft nog geen kantoor om een woningproject voor aan te maken.</p>;
   if ((m = hash.match(/^#\/projecten\/([0-9a-f-]{36})\/bewerken$/))) return <ProjectFormulier id={m[1]} />;
   if ((m = hash.match(/^#\/projecten\/([0-9a-f-]{36})\/aanlevering$/))) return <AanleverScherm id={m[1]} ik={ik} />;
   if ((m = hash.match(/^#\/projecten\/([0-9a-f-]{36})\/concept(?:\/v(\d+))?$/))) return <ConceptScherm key={hash} id={m[1]} ik={ik} versie={m[2] ? Number(m[2]) : undefined} />;

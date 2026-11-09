@@ -7,6 +7,7 @@ import { Badge, Kaart, type Toon } from './onderdelen/basis.tsx';
 import { GegevenRij } from './Aanlevering.tsx';
 import { Meldingenoverzicht } from './onderdelen/Meldingen.tsx';
 import { useActiviteit } from './onderdelen/activiteit.ts';
+import { useRechten } from './onderdelen/rechten.ts';
 
 const FASE_TOON: Record<string, Toon> = { gereed: 'goed', open: 'let-op', wacht: 'info' };
 const FASE_TEKST: Record<string, string> = { gereed: 'gereed', open: 'actie nodig', wacht: 'wacht op vorige fase' };
@@ -97,7 +98,8 @@ export function BeoordelingScherm({ id, ik }: { id: string; ik: Ik }) {
   const [bezig, setBezig] = useState(false);
   const [profielen, setProfielen] = useState<ProjectCatalogus['profielen']>([]);
   const [veld, setVeld] = useState<Record<string, string>>({});
-  const beheer = ik.platformbeheer;
+  const rechten = useRechten(id);
+  const beheer = rechten.produceren;
   useEffect(() => { api<ProjectCatalogus>('/api/catalogus/project').then((k) => setProfielen(k.profielen)); }, []);
 
   if (fout) return <><a className="terug" href={`#/projecten/${id}`}>← Woningproject</a><p className="melding melding-fout" role="alert">{fout}</p></>;
@@ -247,8 +249,8 @@ export function BeoordelingScherm({ id, ik }: { id: string; ik: Ik }) {
           <div className="beslissing">
             <div className="beslissing-kop">Websiteadres {b.domein ? <Badge toon="goed">{b.domein}</Badge> : b.conceptadres ? <Badge toon="goed">tijdelijk conceptadres</Badge> : <Badge toon="fout">open</Badge>}</div>
             <p className="bron">{b.conceptadres && !b.domein ? `Het concept krijgt het tijdelijke adres ${d.project.slug}.invalid; het echte domein volgt vóór publicatie.` : 'Het domein van de woningwebsite, of een tijdelijk adres voor het concept.'}</p>
-            {beheer && <div className="inline-form"><input aria-label="Domein" placeholder="voorbeeldweg1.nl" value={veld.domein ?? ''} onChange={zet('domein')} />
-              <button type="button" className="knop knop-lijn knop-klein" disabled={bezig || !(veld.domein ?? '').trim()} onClick={() => beslis('websiteadres', { domein: veld.domein }, 'Domein vastgelegd.')}>Vastleggen</button>
+            {beheer && <div className="inline-form">{rechten.kantoorbeheer && <><input aria-label="Domein" placeholder="voorbeeldweg1.nl" value={veld.domein ?? ''} onChange={zet('domein')} />
+              <button type="button" className="knop knop-lijn knop-klein" disabled={bezig || !(veld.domein ?? '').trim()} onClick={() => beslis('websiteadres', { domein: veld.domein }, 'Domein vastgelegd.')}>Vastleggen</button></>}
               {!b.domein && !b.conceptadres && <button type="button" className="knop knop-lijn knop-klein" disabled={bezig} onClick={() => beslis('websiteadres', { conceptadres: true }, 'Tijdelijk conceptadres gekozen.')}>Tijdelijk conceptadres</button>}</div>}
           </div>
           <div className="beslissing beslissing-breed">

@@ -7,6 +7,7 @@ import { Badge, Kaart, type Toon } from './onderdelen/basis.tsx';
 import { kortNaam } from './onderdelen/bestandsnaam.ts';
 import { useActiviteit } from './onderdelen/activiteit.ts';
 import { Fasebalk, useBeoordeling } from './Beoordeling.tsx';
+import { useRechten } from './onderdelen/rechten.ts';
 
 const CATEGORIE: Record<string, string> = { exterieur: 'Buitenzijde', entree: 'Entree', woonkamer: 'Woonkamer', keuken: 'Keuken', slaapkamer: 'Slaapkamer',
   werkkamer: 'Werkkamer', badkamer: 'Sanitair', buitenruimte: 'Buitenruimte', omgeving: 'Omgeving', overig: 'Overig' };
@@ -201,7 +202,7 @@ export function AanleverScherm({ id, ik }: { id: string; ik: Ik }) {
   const [melding, setMelding] = useState<{ toon: 'goed' | 'fout'; tekst: string } | null>(null);
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [bezig, setBezig] = useState(false);
-  const beheer = ik.platformbeheer;
+  const beheer = useRechten(id).produceren;
 
   const fase = useBeoordeling(id);
   const laadFase = fase.laad;

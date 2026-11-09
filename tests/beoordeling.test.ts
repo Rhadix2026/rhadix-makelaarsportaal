@@ -110,7 +110,7 @@ test('Markt 27: van aanlevering via broncontrole en kwaliteitscontrole naar vrij
   assert.doesNotMatch(readFileSync(join(map, 'woning.json'), 'utf8') + readFileSync(join(map, 'teksten.md'), 'utf8'), /vraagprijs|€\s?\d{3}\.\d{3}/i, 'geen vraagprijs in de export');
 
   // Vrijgave: alleen voor conceptgeneratie.
-  assert.equal((await beslis('vrijgave', { motivering: 'Broncontrole en kwaliteitscontrole afgerond' }, 'a')).statusCode, 403, 'makelaar mag niet vrijgeven');
+  assert.equal((await beslis('vrijgave', { motivering: 'Broncontrole en kwaliteitscontrole afgerond' }, 'b')).statusCode, 404, 'een ander kantoor kan niet vrijgeven');
   const vr = await beslis('vrijgave', { motivering: 'Broncontrole en kwaliteitscontrole afgerond' });
   assert.equal(vr.statusCode, 200, vr.body);
   b = vr.json();
@@ -141,7 +141,7 @@ test('Markt 27: van aanlevering via broncontrole en kwaliteitscontrole naar vrij
   // Gegevensscheiding: de makelaar ziet de beoordeling van het eigen kantoor, een ander kantoor niet.
   assert.equal((await req('a', 'GET', `/api/projecten/${P}/beoordeling`)).statusCode, 200);
   assert.equal((await req('b', 'GET', `/api/projecten/${P}/beoordeling`)).statusCode, 404);
-  assert.equal((await req('a', 'POST', `/api/projecten/${P}/kwaliteitscontrole`)).statusCode, 403);
+  assert.equal((await req('b', 'POST', `/api/projecten/${P}/kwaliteitscontrole`)).statusCode, 404, 'ander kantoor');
   const bg = await pool.query("SELECT count(*)::int AS n FROM besluit WHERE project_id = $1", [P]);
   assert.ok(bg.rows[0].n > 8);
 

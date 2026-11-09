@@ -74,7 +74,8 @@ test('upload: type uit de inhoud, lege en verkeerde bestanden geweigerd, zelfde 
   const r2 = await upload('beheer', `${url}?soort=foto`, f, 'kopie.jpg', 'image/jpeg');
   assert.equal(r2.statusCode, 200); assert.equal(r2.json().al_aanwezig, true);
   assert.equal((await pool.query('SELECT count(*)::int AS n FROM bestand WHERE project_id = $1', [p.id])).rows[0].n, 1);
-  assert.equal((await upload('a', `${url}?soort=foto`, await beeld(900, 600), 'x.jpg', 'image/jpeg')).statusCode, 403);
+  // Uploaden mag het eigen kantoor (migratie 010); een makelaar van een ander kantoor ziet het project niet.
+  assert.equal((await upload('b', `${url}?soort=foto`, await beeld(900, 600), 'x.jpg', 'image/jpeg')).statusCode, 404);
   // Bestand tonen: eigen kantoor wel, ander kantoor niet; nooit als uitvoerbare pagina.
   const t = await req('a', 'GET', `/api/bestanden/${b.id}`);
   assert.equal(t.statusCode, 200); assert.match(String(t.headers['content-security-policy']), /sandbox/);
@@ -198,7 +199,7 @@ test('brochure-import Markt 27: zelfde resultaat als de generator, gegevens aang
   assert.equal(gn('feit.tuin').vastgelegd.status, 'overgenomen');
   assert.equal(gn('feit.bouwjaar').vastgelegd.status, 'goedgekeurd');
   assert.equal(gn('adres').vastgelegd.waarde, 'Markt 27a', 'bulk raakt handmatige waarden niet');
-  assert.equal((await req('a', 'POST', `/api/projecten/${p.id}/gegevens/bulkgoedkeuring`)).statusCode, 403);
+  assert.equal((await req('b', 'POST', `/api/projecten/${p.id}/gegevens/bulkgoedkeuring`)).statusCode, 404, 'ander kantoor');
   const pr = (await req('beheer', 'GET', `/api/projecten/${p.id}`)).json();
   assert.equal(pr.postcode, '8471 AS', 'het project volgt het aangevulde gegeven');
   assert.equal(pr.adres, 'Markt 27a');
@@ -225,7 +226,7 @@ test('brochure-import Markt 27: zelfde resultaat als de generator, gegevens aang
   assert.ok(ob.meldingen.some((m: { niveau: string; titel: string }) => m.niveau === 'info' && /^Besloten: Kamers = 3/.test(m.titel)));
   assert.equal((await req('beheer', 'PUT', url('feit.inhoud'), { actie: 'corrigeren', waarde: 'veel' })).statusCode, 400);
   assert.equal((await req('beheer', 'PUT', url('postcode'), { actie: 'goedkeuren' })).json().status, 'goedgekeurd');
-  assert.equal((await req('a', 'PUT', url('postcode'), { actie: 'corrigeren', waarde: '1234 AB' })).statusCode, 403);
+  assert.equal((await req('b', 'PUT', url('postcode'), { actie: 'corrigeren', waarde: '1234 AB' })).statusCode, 404, 'ander kantoor');
 
   // Tweede import: goedgekeurde en gecorrigeerde gegevens blijven staan.
   await upload('beheer', `/api/projecten/${p.id}/bestanden?soort=foto`, await beeld(2000, 1300), 'losse-foto.jpg', 'image/jpeg');

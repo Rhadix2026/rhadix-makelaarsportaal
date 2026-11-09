@@ -135,19 +135,22 @@ test('een makelaar ziet alleen projecten van het eigen kantoor, ook in de tellin
   assert.equal((await req('a', 'GET', `/api/projecten?kantoor=${B}`)).json().projecten.length, 0, 'filter op ander kantoor geeft niets');
 });
 
-test('een project van een ander kantoor opvragen geeft 404; een makelaar kan niet aanmaken of wijzigen', async () => {
-  const vanB = (await pool.query('SELECT id FROM project WHERE kantoor_id = $1 LIMIT 1', [B])).rows[0].id;
-  assert.equal((await req('a', 'GET', `/api/projecten/${vanB}`)).statusCode, 404);
-  assert.equal((await req('a', 'POST', '/api/projecten', { kantoor_id: A, naam: 'Eigen woning' })).statusCode, 403);
-  const vanA = (await pool.query('SELECT * FROM project WHERE kantoor_id = $1 LIMIT 1', [A])).rows[0];
-  assert.equal((await req('a', 'PUT', `/api/projecten/${vanA.id}`, { ...vanA, naam: 'Gewijzigd' })).statusCode, 403);
+test('een project van een ander kantoor opvragen geeft 404; een makelaar maakt en wijzigt alleen in het eigen kantoor', async () => {
+  const vanB = (await pool.query('SELECT * FROM project WHERE kantoor_id = $1 LIMIT 1', [B])).rows[0];
+  assert.equal((await req('a', 'GET', `/api/projecten/${vanB.id}`)).statusCode, 404);
+  assert.equal((await req('a', 'PUT', `/api/projecten/${vanB.id}`, { ...vanB, naam: 'Gewijzigd' })).statusCode, 404);
+  assert.equal((await req('a', 'POST', '/api/projecten', { kantoor_id: B, naam: 'Woning elders' })).statusCode, 400, 'niet in een ander kantoor');
+  const nieuw = await req('a', 'POST', '/api/projecten', { kantoor_id: A, naam: 'Eigen woning' });
+  assert.equal(nieuw.statusCode, 201, nieuw.body);
+  const eigen = nieuw.json();
+  assert.equal((await req('a', 'PUT', `/api/projecten/${eigen.id}`, { ...eigen, naam: 'Eigen woning (gewijzigd)' })).statusCode, 200);
 });
 
-test('RLS: ook met een vrije query ziet een makelaar alleen projecten van het eigen kantoor en kan niet schrijven', async () => {
+test('RLS: ook met een vrije query ziet en wijzigt een makelaar alleen projecten van het eigen kantoor; verwijderen nooit', async () => {
   const r = await alsGebruiker(makelaarA, (cl) => cl.query('SELECT DISTINCT kantoor_id FROM project'));
   assert.deepEqual(r.rows.map((x) => x.kantoor_id), [A]);
-  await assert.rejects(alsGebruiker(makelaarA, (cl) => cl.query(`INSERT INTO project (kantoor_id, slug, naam, ontwerpsysteem) VALUES ($1, 'stiekem', 'X', '1.0')`, [A])), /row-level security/);
-  assert.equal((await alsGebruiker(makelaarA, (cl) => cl.query("UPDATE project SET naam = 'X'"))).rowCount, 0);
+  await assert.rejects(alsGebruiker(makelaarA, (cl) => cl.query(`INSERT INTO project (kantoor_id, slug, naam, ontwerpsysteem) VALUES ($1, 'stiekem', 'X', '1.0')`, [B])), /row-level security/);
+  assert.equal((await alsGebruiker(makelaarA, (cl) => cl.query("UPDATE project SET naam = 'X' WHERE kantoor_id = $1", [B]))).rowCount, 0);
   assert.equal((await alsGebruiker(makelaarA, (cl) => cl.query('DELETE FROM project'))).rowCount, 0);
 });
 

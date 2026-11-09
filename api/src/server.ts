@@ -96,6 +96,31 @@ export function bouwApp() {
     if (!(await ik(req.gebruiker)).platformbeheer) return reply.code(403).send({ fout: 'Alleen voor platformbeheer' });
   };
 
+  // Rollen binnen het kantoor (migratie 010): platformbeheer overal; kantoorbeheerder en makelaar
+  // werken in het eigen kantoor. De database (RLS) dwingt dit ook zelf af; deze controles geven een
+  // nette melding en bewaken de handelingen die alleen de kantoorbeheerder mag.
+  type Recht = 'produceren' | 'kantoorbeheer';
+  const KANTOOR_VAN: Record<'project' | 'kantoor' | 'concept' | 'bestand', string> = {
+    project: 'SELECT kantoor_id AS k FROM project WHERE id = $1',
+    kantoor: 'SELECT id AS k FROM kantoor WHERE id = $1',
+    concept: 'SELECT kantoor_id AS k FROM concept WHERE id = $1',
+    bestand: 'SELECT kantoor_id AS k FROM bestand WHERE id = $1',
+  };
+  async function rechtOp(gebruiker: string, soort: keyof typeof KANTOOR_VAN, id: string) {
+    if (!UUID.test(id)) return null;
+    return alsGebruiker(gebruiker, async (c) => {
+      const k = (await c.query(KANTOOR_VAN[soort], [id])).rows[0]?.k;
+      if (!k) return null;    // niet zichtbaar: ander kantoor of bestaat niet
+      return (await c.query('SELECT app.mag_produceren($1) AS produceren, app.is_kantoorbeheer($1) AS kantoorbeheer', [k])).rows[0] as Record<Recht, boolean>;
+    });
+  }
+  const vereist = (recht: Recht, soort: keyof typeof KANTOOR_VAN = 'project') => async (req: FastifyRequest, reply: FastifyReply) => {
+    const r = await rechtOp(req.gebruiker, soort, (req.params as { id: string }).id);
+    if (!r) return reply.code(404).send({ fout: 'Niet gevonden' });
+    if (!r[recht]) return reply.code(403).send({ fout: recht === 'kantoorbeheer' ? 'Alleen voor de kantoorbeheerder' : 'Geen rechten voor dit kantoor' });
+  };
+  const productie = vereist('produceren'), kantoorbeheer = vereist('kantoorbeheer', 'kantoor');
+
   // ── Inloggen en sessie ──────────────────────────────────────────────────
   // Wat het inlogscherm toont: de Rhadix-login en/of de eigen login, en waarom een Rhadix-aanmelding
   // (nog) niet lukt. Geeft alleen iets over het cookie van de aanvrager zelf.
@@ -169,11 +194,15 @@ export function bouwApp() {
     catch (e) { return dbFout(e, reply); }
   });
 
-  app.put<{ Params: { id: string }; Body: Record<string, unknown> }>('/api/kantoren/:id', { preHandler: alleenPlatform }, async (req, reply) => {
-    if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Kantoor niet gevonden' });
+  app.put<{ Params: { id: string }; Body: Record<string, unknown> }>('/api/kantoren/:id', { preHandler: kantoorbeheer }, async (req, reply) => {
     const v = valideerKantoor(req.body ?? {}, await profielen());
     if (!v.ok) return reply.code(400).send({ fout: 'Controleer de invoer', fouten: v.fouten });
     try {
+      // Korte naam (mapnamen) en status blijven bij platformbeheer: voor de kantoorbeheerder ongewijzigd.
+      if (!(await ik(req.gebruiker)).platformbeheer) {
+        const oud = await alsGebruiker(req.gebruiker, (c) => leesKantoor(c, req.params.id));
+        if (oud) Object.assign(v.kantoor, { slug: oud.slug, status: oud.status });
+      }
       const r = await alsGebruiker(req.gebruiker, (c) => wijzigKantoor(c, req.gebruiker, req.params.id, v.kantoor));
       if (r === null) return reply.code(404).send({ fout: 'Kantoor niet gevonden' });
       if (r === 'geweigerd') return reply.code(403).send({ fout: 'Geen rechten voor deze handeling' });
@@ -206,8 +235,13 @@ export function bouwApp() {
     geweigerd: () => reply.code(403).send({ fout: 'Geen rechten voor deze handeling' }),
   } as Record<string, () => FastifyReply>)[fout]();
 
-  app.post<{ Body: Record<string, unknown> }>('/api/projecten', { preHandler: alleenPlatform }, async (req, reply) => {
+  app.post<{ Body: Record<string, unknown> }>('/api/projecten', async (req, reply) => {
     const v = valideerProject(req.body ?? {}, await profielen());
+    if (v.ok) {
+      const r = await rechtOp(req.gebruiker, 'kantoor', v.project.kantoor_id);
+      if (!r?.produceren) return reply.code(400).send({ fout: 'Controleer de invoer', fouten: { kantoor_id: 'Kies een van uw kantoren' } });
+      if (v.project.domein && !r.kantoorbeheer) return reply.code(403).send({ fout: 'Het definitieve websiteadres legt de kantoorbeheerder vast' });
+    }
     if (!v.ok) return reply.code(400).send({ fout: 'Controleer de invoer', fouten: v.fouten });
     const ds = await standaardOntwerpsysteem();
     try {
@@ -216,9 +250,14 @@ export function bouwApp() {
     } catch (e) { return dbFout(e, reply); }
   });
 
-  app.put<{ Params: { id: string }; Body: Record<string, unknown> }>('/api/projecten/:id', { preHandler: alleenPlatform }, async (req, reply) => {
+  app.put<{ Params: { id: string }; Body: Record<string, unknown> }>('/api/projecten/:id', { preHandler: productie }, async (req, reply) => {
     const v = valideerProject(req.body ?? {}, await profielen());
     if (!v.ok) return reply.code(400).send({ fout: 'Controleer de invoer', fouten: v.fouten });
+    const recht = await rechtOp(req.gebruiker, 'project', req.params.id);
+    if (!recht?.kantoorbeheer) {
+      const oud = await alsGebruiker(req.gebruiker, (c) => leesProject(c, req.params.id));
+      if (v.project.domein && v.project.domein !== oud?.domein) return reply.code(403).send({ fout: 'Het definitieve websiteadres legt de kantoorbeheerder vast' });
+    }
     try {
       const r = await alsGebruiker(req.gebruiker, (c) => wijzigProject(c, req.gebruiker, req.params.id, v.project));
       return 'fout' in r ? projectFout(reply, r.fout!) : r.project;
@@ -226,7 +265,8 @@ export function bouwApp() {
   });
 
   // ── Aanlevering: bestanden, verwerkingen, gegevens ─────────────────────
-  const UPLOAD = { preHandler: alleenPlatform, bodyLimit: 160 * 1024 * 1024 };
+  const UPLOAD = { preHandler: productie, bodyLimit: 160 * 1024 * 1024 };
+  const LOGO = { preHandler: kantoorbeheer, bodyLimit: 160 * 1024 * 1024 };
   const bestandsnaam = (req: FastifyRequest) => { try { return decodeURIComponent(String(req.headers['x-bestandsnaam'] ?? '')); } catch { return ''; } };
   const isBuffer = (b: unknown): b is Buffer => Buffer.isBuffer(b);
 
@@ -241,7 +281,7 @@ export function bouwApp() {
     return reply.code(r.al_aanwezig ? 200 : 201).send(r);
   });
 
-  app.delete<{ Params: { id: string } }>('/api/bestanden/:id', { preHandler: alleenPlatform }, async (req, reply) => {
+  app.delete<{ Params: { id: string } }>('/api/bestanden/:id', { preHandler: vereist('produceren', 'bestand') }, async (req, reply) => {
     if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Bestand niet gevonden' });
     const ok = await alsGebruiker(req.gebruiker, (c) => trekIn(c, req.gebruiker, req.params.id));
     return ok ? { ok } : reply.code(404).send({ fout: 'Bestand niet gevonden of niet in te trekken' });
@@ -261,12 +301,16 @@ export function bouwApp() {
   app.get('/api/bestanden/:id', toonBestand(false));
   app.get('/api/bestanden/:id/miniatuur', toonBestand(true));
 
+  // Wat deze gebruiker met dit project mag (voor de interface; de API en de database dwingen het zelf af).
+  app.get<{ Params: { id: string } }>('/api/projecten/:id/rechten', async (req, reply) =>
+    (await rechtOp(req.gebruiker, 'project', req.params.id)) ?? reply.code(404).send({ fout: 'Niet gevonden' }));
+
   app.get<{ Params: { id: string } }>('/api/projecten/:id/aanlevering', async (req, reply) => {
     const o = await alsGebruiker(req.gebruiker, (c) => overzicht(c, req.params.id));
     return o ?? reply.code(404).send({ fout: 'Woningproject niet gevonden' });
   });
 
-  app.post<{ Params: { id: string }; Body: { soort?: string } }>('/api/projecten/:id/verwerkingen', { preHandler: alleenPlatform }, async (req, reply) => {
+  app.post<{ Params: { id: string }; Body: { soort?: string } }>('/api/projecten/:id/verwerkingen', { preHandler: productie }, async (req, reply) => {
     const soort = req.body?.soort;
     if (soort !== 'brochure-import' && soort !== 'foto-indeling') return reply.code(400).send({ fout: 'Onbekende verwerking' });
     const r = await alsGebruiker(req.gebruiker, (c) => vraagVerwerking(c, req.gebruiker, req.params.id, soort));
@@ -278,7 +322,7 @@ export function bouwApp() {
   });
 
   app.put<{ Params: { id: string; sleutel: string }; Body: { actie?: string; waarde?: unknown; label?: string; eenheid?: string | null; bevestigd?: boolean; motivering?: string } }>(
-    '/api/projecten/:id/gegevens/:sleutel', { preHandler: alleenPlatform }, async (req, reply) => {
+    '/api/projecten/:id/gegevens/:sleutel', { preHandler: productie }, async (req, reply) => {
       const { id, sleutel } = req.params;
       if (!UUID.test(id)) return reply.code(404).send({ fout: 'Woningproject niet gevonden' });
       if (!/^[a-z][a-z0-9_:.-]{0,80}$/.test(sleutel)) return reply.code(400).send({ fout: 'Ongeldig gegeven' });
@@ -301,13 +345,13 @@ export function bouwApp() {
       return r.gegeven;
     });
 
-  app.post<{ Params: { id: string } }>('/api/projecten/:id/gegevens/bulkgoedkeuring', { preHandler: alleenPlatform }, async (req, reply) => {
+  app.post<{ Params: { id: string } }>('/api/projecten/:id/gegevens/bulkgoedkeuring', { preHandler: productie }, async (req, reply) => {
     if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Woningproject niet gevonden' });
     const r = await alsGebruiker(req.gebruiker, (c) => bulkGoedkeuren(c, req.gebruiker, req.params.id));
     return r ?? reply.code(404).send({ fout: 'Woningproject niet gevonden' });
   });
 
-  app.post<{ Params: { id: string } }>('/api/projecten/:id/aanleveringen', { preHandler: alleenPlatform }, async (req, reply) => {
+  app.post<{ Params: { id: string } }>('/api/projecten/:id/aanleveringen', { preHandler: productie }, async (req, reply) => {
     if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Woningproject niet gevonden' });
     const r = await alsGebruiker(req.gebruiker, (c) => slaOp(c, req.gebruiker, req.params.id));
     if ('fout' in r) return reply.code(r.fout === 'onbekend' ? 404 : 409).send({ fout: r.fout === 'onbekend' ? 'Woningproject niet gevonden' : 'Wacht tot de verwerking klaar is' });
@@ -321,14 +365,16 @@ export function bouwApp() {
     return b ?? reply.code(404).send({ fout: 'Woningproject niet gevonden' });
   });
 
-  app.post<{ Params: { id: string } }>('/api/projecten/:id/kwaliteitscontrole', { preHandler: alleenPlatform }, async (req, reply) => {
+  app.post<{ Params: { id: string } }>('/api/projecten/:id/kwaliteitscontrole', { preHandler: productie }, async (req, reply) => {
     if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Woningproject niet gevonden' });
     const r = await alsGebruiker(req.gebruiker, (c) => kwaliteitscontrole(c, req.gebruiker, req.params.id));
     if ('fout' in r) return reply.code(r.fout === 'onbekend' ? 404 : 409).send({ fout: r.fout === 'onbekend' ? 'Woningproject niet gevonden' : 'Importeer eerst de brochure' });
     return reply.code(201).send(r.controle);
   });
 
-  app.put<{ Params: { id: string; onderwerp: string }; Body: Record<string, unknown> }>('/api/projecten/:id/beslissingen/:onderwerp', { preHandler: alleenPlatform }, async (req, reply) => {
+  app.put<{ Params: { id: string; onderwerp: string }; Body: Record<string, unknown> }>('/api/projecten/:id/beslissingen/:onderwerp', { preHandler: productie }, async (req, reply) => {
+    if (req.params.onderwerp === 'websiteadres' && req.body?.domein !== undefined && !(await rechtOp(req.gebruiker, 'project', req.params.id))?.kantoorbeheer)
+      return reply.code(403).send({ fout: 'Het definitieve websiteadres legt de kantoorbeheerder vast; kies voor nu het tijdelijke conceptadres' });
     if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Woningproject niet gevonden' });
     const r = await alsGebruiker(req.gebruiker, (c) => beslis(c, req.gebruiker, req.params.id, req.params.onderwerp, req.body ?? {}));
     if ('fout' in r) {
@@ -344,7 +390,9 @@ export function bouwApp() {
   });
 
   // Snelle beoordeling: bron overnemen als uitgangspunt, verplichte keuzes, kwaliteitscontrole en vrijgave in één handeling.
-  app.post<{ Params: { id: string }; Body: Record<string, unknown> }>('/api/projecten/:id/snelle-beoordeling', { preHandler: alleenPlatform }, async (req, reply) => {
+  app.post<{ Params: { id: string }; Body: Record<string, unknown> }>('/api/projecten/:id/snelle-beoordeling', { preHandler: productie }, async (req, reply) => {
+    if (req.body?.domein && !(await rechtOp(req.gebruiker, 'project', req.params.id))?.kantoorbeheer)
+      return reply.code(403).send({ fout: 'Het definitieve websiteadres legt de kantoorbeheerder vast; kies voor nu het tijdelijke conceptadres' });
     if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Woningproject niet gevonden' });
     const r = await alsGebruiker(req.gebruiker, (c) => snelleBeoordeling(c, req.gebruiker, req.params.id, req.body ?? {}));
     if ('fout' in r) return reply.code(r.fout === 'onbekend' ? 404 : 400).send({ fout: r.fout === 'onbekend' ? 'Woningproject niet gevonden' : r.melding });
@@ -373,7 +421,7 @@ export function bouwApp() {
     return r ?? reply.code(404).send({ fout: 'Woningproject niet gevonden' });
   });
 
-  app.post<{ Params: { id: string } }>('/api/projecten/:id/concepten', { preHandler: alleenPlatform }, async (req, reply) => {
+  app.post<{ Params: { id: string } }>('/api/projecten/:id/concepten', { preHandler: productie }, async (req, reply) => {
     if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Woningproject niet gevonden' });
     const r = await alsGebruiker(req.gebruiker, (c) => vraagConcept(c, req.gebruiker, req.params.id));
     if ('fout' in r) return reply.code(409).send({ fout: r.reden });
@@ -387,7 +435,7 @@ export function bouwApp() {
     return k ?? reply.code(404).send({ fout: 'Concept niet gevonden' });
   });
 
-  app.put<{ Params: { id: string }; Body: { besluit?: string; motivering?: string; verbeterpunten?: unknown } }>('/api/concepten/:id/beoordeling', { preHandler: alleenPlatform }, async (req, reply) => {
+  app.put<{ Params: { id: string }; Body: { besluit?: string; motivering?: string; verbeterpunten?: unknown } }>('/api/concepten/:id/beoordeling', { preHandler: vereist('kantoorbeheer', 'concept') }, async (req, reply) => {
     if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Concept niet gevonden' });
     const r = await alsGebruiker(req.gebruiker, (c) => beoordeelConcept(c, req.gebruiker, req.params.id, req.body ?? {}));
     if ('fout' in r) return reply.code(r.fout === 'onbekend' ? 404 : 400).send({ fout: ({ onbekend: 'Concept niet gevonden', punten: 'Leg minstens één verbeterpunt vast', besluit: 'Kies accepteren of verbeterpunten' } as Record<string, string>)[r.fout as string] });
@@ -419,19 +467,19 @@ export function bouwApp() {
       .send({ fout: r.melding ?? (r.fout === 'geen_voorstel' ? 'Er is geen voorstel uit een logo' : 'Geen rechten voor deze handeling') })
     : r.huisstijl;
 
-  app.post<{ Params: { id: string } }>('/api/kantoren/:id/logo', UPLOAD, async (req, reply) => {
+  app.post<{ Params: { id: string } }>('/api/kantoren/:id/logo', LOGO, async (req, reply) => {
     if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Kantoor niet gevonden' });
     if (!isBuffer(req.body)) return reply.code(415).send({ fout: 'Stuur het logo als ruwe inhoud' });
     const body = req.body;
     return huisstijlAntwoord(reply, await alsGebruiker(req.gebruiker, (c) => uploadLogo(c, req.gebruiker, req.params.id, bestandsnaam(req), body)));
   });
 
-  app.post<{ Params: { id: string }; Body: { bestand_id?: string } }>('/api/kantoren/:id/logo/brochure', { preHandler: alleenPlatform }, async (req, reply) => {
+  app.post<{ Params: { id: string }; Body: { bestand_id?: string } }>('/api/kantoren/:id/logo/brochure', { preHandler: kantoorbeheer }, async (req, reply) => {
     if (!UUID.test(req.params.id) || !UUID.test(String(req.body?.bestand_id))) return reply.code(404).send({ fout: 'Niet gevonden' });
     return huisstijlAntwoord(reply, await alsGebruiker(req.gebruiker, (c) => logoUitBrochure(c, req.gebruiker, req.params.id, String(req.body.bestand_id))));
   });
 
-  app.post<{ Params: { id: string } }>('/api/kantoren/:id/huisstijl/voorstel', { preHandler: alleenPlatform }, async (req, reply) => {
+  app.post<{ Params: { id: string } }>('/api/kantoren/:id/huisstijl/voorstel', { preHandler: kantoorbeheer }, async (req, reply) => {
     if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Kantoor niet gevonden' });
     return huisstijlAntwoord(reply, await alsGebruiker(req.gebruiker, (c) => bevestigVoorstel(c, req.gebruiker, req.params.id)));
   });

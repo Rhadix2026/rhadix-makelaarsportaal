@@ -43,14 +43,18 @@ test('een ander kantoor opvragen geeft 404 (bestaan wordt niet verraden)', async
   assert.equal((await get('beheer', `/api/kantoren/${B}`)).statusCode, 200);
 });
 
-test('een makelaar kan geen kantoor aanmaken of wijzigen, ook niet het eigen kantoor', async () => {
+test('een makelaar kan geen kantoor aanmaken of wijzigen; de kantoorbeheerder alleen het eigen kantoor', async () => {
   const nieuw = await app.inject({ method: 'POST', url: '/api/kantoren', headers: { cookie: c.a }, payload: { merknaam: 'Eigen kantoor' } });
   assert.equal(nieuw.statusCode, 403);
   const eigen = await app.inject({ method: 'PUT', url: `/api/kantoren/${A}`, headers: { cookie: c.a }, payload: { merknaam: 'Gewijzigd' } });
-  assert.equal(eigen.statusCode, 403);
-  const ander = await app.inject({ method: 'PUT', url: `/api/kantoren/${B}`, headers: { cookie: c.b }, payload: { merknaam: 'Gewijzigd' } });
-  assert.equal(ander.statusCode, 403, 'ook een kantoorbeheerder wijzigt in de eerste fase niets');
-  assert.deepEqual(await namen('beheer'), ['Kantoor A', 'Kantoor B'], 'niets veranderd');
+  assert.equal(eigen.statusCode, 403, 'een makelaar wijzigt het kantoor niet');
+  const ander = await app.inject({ method: 'PUT', url: `/api/kantoren/${A}`, headers: { cookie: c.b }, payload: { merknaam: 'Gewijzigd' } });
+  assert.equal(ander.statusCode, 404, 'een kantoorbeheerder ziet een ander kantoor niet');
+  // Eigen kantoor: gegevens wel; korte naam en status blijven ongewijzigd (platformbeheer).
+  const zelf = await app.inject({ method: 'PUT', url: `/api/kantoren/${B}`, headers: { cookie: c.b }, payload: { merknaam: 'Kantoor B', telefoon: '0561 123456', slug: 'ander-b', status: 'inactief' } });
+  assert.equal(zelf.statusCode, 200, zelf.body);
+  assert.deepEqual([zelf.json().telefoon, zelf.json().slug, zelf.json().status], ['0561 123456', 'kantoor-b', 'actief']);
+  assert.deepEqual(await namen('beheer'), ['Kantoor A', 'Kantoor B']);
 });
 
 test('alleen platformbeheer ziet de systeempagina', async () => {

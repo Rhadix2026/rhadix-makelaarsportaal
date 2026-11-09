@@ -82,7 +82,7 @@ test('Markt 27: vrijgave met alleen de verplichte punten, concept v1, preview, v
   // Concept v1.
   const g1 = await req('beheer', 'POST', `/api/projecten/${P}/concepten`);
   assert.equal(g1.statusCode, 202, g1.body);
-  assert.equal((await req('a', 'POST', `/api/projecten/${P}/concepten`)).statusCode, 403);
+  assert.equal((await req('b', 'POST', `/api/projecten/${P}/concepten`)).statusCode, 404, 'een ander kantoor kan niet genereren');
   await wekVerwerker();
   let lijst = (await req('beheer', 'GET', `/api/projecten/${P}/concepten`)).json();
   assert.equal(lijst.generatie.status, 'klaar', lijst.generatie.fout);
@@ -125,6 +125,7 @@ test('Markt 27: vrijgave met alleen de verplichte punten, concept v1, preview, v
   assert.equal((await req('a', 'GET', `/api/concepten/${v1.id}`)).statusCode, 200);
 
   // Verbeterpunten, daarna een nieuwe versie zonder de vorige te overschrijven.
+  assert.equal((await req('a', 'PUT', `/api/concepten/${v1.id}/beoordeling`, { besluit: 'geaccepteerd' })).statusCode, 403, 'een makelaar beoordeelt geen concept');
   assert.equal((await req('beheer', 'PUT', `/api/concepten/${v1.id}/beoordeling`, { besluit: 'verbeterpunten', verbeterpunten: [] })).statusCode, 400);
   const vb = await req('beheer', 'PUT', `/api/concepten/${v1.id}/beoordeling`, { besluit: 'verbeterpunten', verbeterpunten: [{ onderdeel: 'foto\'s', tekst: 'Originele foto\'s opvragen' }] });
   assert.equal(vb.json().status, 'verbeterpunten');

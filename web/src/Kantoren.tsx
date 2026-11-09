@@ -4,6 +4,7 @@ import { api, ApiFout, upload, type Huisstijl, type Ik, type Kantoor, type Rhadi
 import { Badge, Kaart, PaginaTitel } from './onderdelen/basis.tsx';
 import { ProfielKeuze } from './onderdelen/ProfielKeuze.tsx';
 import { kortNaam } from './onderdelen/bestandsnaam.ts';
+import { kantoorRechten } from './onderdelen/rechten.ts';
 
 const ROL: Record<string, string> = { makelaar: 'Makelaar', kantoorbeheerder: 'Kantoorbeheerder' };
 
@@ -72,7 +73,7 @@ export function KantoorDetail({ id, ik }: { id: string; ik: Ik }) {
       <a className="terug" href="#/kantoren">← Kantoren</a>
       <div className="rij" style={{ alignItems: 'flex-start' }}>
         <PaginaTitel badge="Makelaarskantoor" titel={k.merknaam} sub={k.juridische_naam ? `Juridische naam: ${k.juridische_naam}` : undefined} />
-        {ik.platformbeheer && <a className="knop knop-lijn" href={`#/kantoren/${k.id}/bewerken`} style={{ textDecoration: 'none' }}>Bewerken</a>}
+        {kantoorRechten(ik, k.id).kantoorbeheer && <a className="knop knop-lijn" href={`#/kantoren/${k.id}/bewerken`} style={{ textDecoration: 'none' }}>Bewerken</a>}
       </div>
       <div className="raster raster-2">
         <Kaart titel="Gegevens">
@@ -87,7 +88,7 @@ export function KantoorDetail({ id, ik }: { id: string; ik: Ik }) {
         </Kaart>
       </div>
       {ik.platformbeheer && <RhadixKoppeling kantoor={k} gewijzigd={(t) => setK({ ...k, rhadix_tenant_id: t })} />}
-      <HuisstijlKaart id={k.id} beheer={ik.platformbeheer} />
+      <HuisstijlKaart id={k.id} beheer={kantoorRechten(ik, k.id).kantoorbeheer} />
     </>
   );
 }
@@ -193,7 +194,8 @@ function HuisstijlKaart({ id, beheer }: { id: string; beheer: boolean }) {
 
 const LEEG = { merknaam: '', juridische_naam: '', slug: '', telefoon: '', email: '', website: '', adres: '', standaard_profiel: '', merkkleur: '', detailkleur: '', status: 'actief' };
 
-export function KantoorFormulier({ id }: { id?: string }) {
+// Korte naam en status wijzigt alleen platformbeheer; voor de kantoorbeheerder staan ze vast.
+export function KantoorFormulier({ id, platform = false }: { id?: string; platform?: boolean }) {
   const [w, setW] = useState(LEEG);
   const [profielen, setProfielen] = useState<{ naam: string; omschrijving: string }[]>([]);
   const [fouten, setFouten] = useState<Record<string, string>>({});
@@ -241,7 +243,8 @@ export function KantoorFormulier({ id }: { id?: string }) {
         <div className="formulier-raster">
           {veld('merknaam', 'Merknaam (publiek) *', <input id="merknaam" value={w.merknaam} onChange={zet('merknaam')} required />, 'Zoals het kantoor zich presenteert, op de woningwebsites.')}
           {veld('juridische_naam', 'Juridische naam', <input id="juridische_naam" value={w.juridische_naam} onChange={zet('juridische_naam')} />, 'Statutaire naam of naam in het handelsregister, bijvoorbeeld met B.V.')}
-          {veld('slug', 'Korte naam', <input id="slug" value={w.slug} onChange={zet('slug')} placeholder="automatisch uit de naam" />, 'Kleine letters, cijfers en koppeltekens; wordt gebruikt in woningnamen.')}
+          {veld('slug', 'Korte naam', <input id="slug" value={w.slug} onChange={zet('slug')} placeholder="automatisch uit de naam" readOnly={!platform} />,
+            platform ? 'Kleine letters, cijfers en koppeltekens; wordt gebruikt in woningnamen.' : 'Wordt gebruikt in woningnamen; wijzigen via Rhadix.')}
           {veld('telefoon', 'Telefoon', <input id="telefoon" type="tel" value={w.telefoon} onChange={zet('telefoon')} />)}
           {veld('email', 'E-mail', <input id="email" type="email" value={w.email} onChange={zet('email')} />)}
           {veld('website', 'Website', <input id="website" type="url" value={w.website} onChange={zet('website')} placeholder="https://" />)}
@@ -263,7 +266,7 @@ export function KantoorFormulier({ id }: { id?: string }) {
             </div>
           ), 'Tweede kleur uit de huisstijl, voor accenten.')}
           {id && veld('status', 'Status', (
-            <select id="status" value={w.status} onChange={zet('status')}>
+            <select id="status" value={w.status} onChange={zet('status')} disabled={!platform}>
               <option value="actief">actief</option>
               <option value="inactief">inactief</option>
             </select>

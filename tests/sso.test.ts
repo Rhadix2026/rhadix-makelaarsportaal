@@ -56,12 +56,14 @@ test('organisatiescheiding: een makelaar ziet alleen het eigen kantoor en de eig
   assert.deepEqual(await namen(tb, '/api/projecten', 'naam'), ['Woning B']);
 });
 
-test('kantoorbeheerder (ORG_ADMIN) heeft dezelfde grenzen als in de eerste fase: niets wijzigen', async () => {
+test('kantoorbeheerder (ORG_ADMIN) wijzigt het eigen kantoor, geen ander kantoor en geen koppeling', async () => {
   const t = rhadixToken({ tenant_id: ORG_A, role: 'ORG_ADMIN' });
   const ik = (await als(t, '/api/ik')).json();
   assert.equal(ik.kantoren[0].rol, 'kantoorbeheerder');
-  const r = await app.inject({ method: 'PUT', url: `/api/kantoren/${A}`, headers: { cookie: ssoCookie(t), origin: HERKOMST }, payload: { merknaam: 'X' } });
-  assert.equal(r.statusCode, 403);
+  const r = await app.inject({ method: 'PUT', url: `/api/kantoren/${A}`, headers: { cookie: ssoCookie(t), origin: HERKOMST }, payload: { merknaam: 'Kantoor A', telefoon: '0521 000000' } });
+  assert.equal(r.statusCode, 200, r.body);
+  const b = await app.inject({ method: 'PUT', url: `/api/kantoren/${B}`, headers: { cookie: ssoCookie(t), origin: HERKOMST }, payload: { merknaam: 'X' } });
+  assert.equal(b.statusCode, 404);
   const k = await app.inject({ method: 'PUT', url: `/api/kantoren/${A}/rhadix-organisatie`, headers: { cookie: ssoCookie(t), origin: HERKOMST }, payload: { tenant_id: null } });
   assert.equal(k.statusCode, 403, 'koppelen is alleen voor platformbeheer');
 });

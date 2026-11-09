@@ -4,6 +4,7 @@ import { api, ApiFout, type ConceptenOverzicht, type Ik, type Kantoor, type Proj
 import { Badge, Kaart, PaginaTitel, StatKaart, type Toon } from './onderdelen/basis.tsx';
 import { ProfielKeuze } from './onderdelen/ProfielKeuze.tsx';
 import { useActiviteit } from './onderdelen/activiteit.ts';
+import { kantoorRechten, magProjectenAanmaken } from './onderdelen/rechten.ts';
 
 // ── Status en voortgang ─────────────────────────────────────────────────────
 const STATUS_TOON: Record<string, Toon> = {
@@ -99,7 +100,7 @@ export function Dashboard({ ik }: { ik: Ik }) {
       <div className="rij" style={{ alignItems: 'flex-start' }}>
         <PaginaTitel badge="Dashboard" titel="Woningprojecten"
           sub={ik.platformbeheer ? 'Alle woningprojecten van alle kantoren.' : 'De woningprojecten van uw kantoren.'} />
-        {ik.platformbeheer && actieveKantoren.length > 0 && <a className="knop knop-primair" href="#/projecten/nieuw" style={{ textDecoration: 'none' }}>Nieuw woningproject</a>}
+        {magProjectenAanmaken(ik) && actieveKantoren.length > 0 && <a className="knop knop-primair" href="#/projecten/nieuw" style={{ textDecoration: 'none' }}>Nieuw woningproject</a>}
       </div>
 
       {data && (
@@ -199,7 +200,7 @@ export function ProjectDetail({ id, ik }: { id: string; ik: Ik }) {
           <a className="knop knop-primair" href={`#/projecten/${p.id}/aanlevering`} style={{ textDecoration: 'none' }}>Aanlevering</a>
           <a className="knop knop-primair" href={`#/projecten/${p.id}/beoordeling`} style={{ textDecoration: 'none' }}>Beoordeling en vrijgave</a>
           <a className="knop knop-primair" href={`#/projecten/${p.id}/concept`} style={{ textDecoration: 'none' }}>Concept en preview</a>
-          {ik.platformbeheer && <a className="knop knop-lijn" href={`#/projecten/${p.id}/bewerken`} style={{ textDecoration: 'none' }}>Bewerken</a>}
+          {kantoorRechten(ik, p.kantoor_id).produceren && <a className="knop knop-lijn" href={`#/projecten/${p.id}/bewerken`} style={{ textDecoration: 'none' }}>Bewerken</a>}
         </div>
       </div>
       <div className="raster raster-2">
