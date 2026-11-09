@@ -202,4 +202,4 @@ Vink per stap af wat je ziet. Ruim een testgebruiker achteraf op via deactiveren
 | T5 | Na deactiveren of intrekken blijft een token tot 60 min geldig | Vertraagde blokkade | Het portaal aansluiten op de centrale intrekking (B-16, als die in productie is) |
 | T6 | Nieuwe organisatie: het kantoor koppelen is handwerk | Extra stap voor platformbeheer | Bewust (koppeling op ID); eventueel automatisch aanmaken bij type MAKELAAR |
 | T7 | Naam en type van een organisatie zijn niet te wijzigen | Een tikfout is alleen te herstellen door opnieuw aan te maken | Wijzigroute in Rhadix |
-| T8 | Het testdatabasewachtwoord is niet gewijzigd (zie 2.1) | De eerder getoonde waarde is nog geldig | Wijzigen in drie stappen, met akkoord |
+| T8 | ~~Het testdatabasewachtwoord is niet gewijzigd (zie 2.1)~~ | **Opgelost op 9-11** (±15:00 UTC): wachtwoord van `studio` vervangen. Het oude wordt via het netwerk geweigerd; zie `2026-11-09-databasegebruiker-beperkte-rechten.md` voor het vervolg | — |
