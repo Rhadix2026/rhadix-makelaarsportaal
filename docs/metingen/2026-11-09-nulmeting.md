@@ -480,6 +480,8 @@ vrij te maken.
   werkgeheugen naar swap.
 - **Correctie op §10:** de modelcache is tijdens de classificatie dus géén vrij terug te winnen ruimte, maar
   feitelijk onderdeel van de werkset. Pas na afloop is hij vrij te maken.
+- *Bijgesteld in §16.4: met een verse verwerker is de werkset ±2,6 GB; de 3,3 GB cache hier was grotendeels
+  verouderde cache van eerdere verwerkingen.*
 
 ### 12.5 Opslag en database
 
@@ -649,6 +651,7 @@ mee; Object Storage biedt 1 TB.
 
 **2. Processorgrens: verhogen van 4 GB naar 5 GB** (`MP_VERWERKER_GEHEUGEN=5g`,
 `MP_VERWERKER_GEHEUGEN_SWAP=7g`). Onderbouwing:
+- *(Bijgesteld in §16.4: de werkset is ±2,6 GB plus opgebouwde cache; het advies voor 5 GB blijft staan.)*
 - **De import is bepalend, niet de conceptgeneratie.** Tijdens de classificatie zijn het model (±3,3 GB in gebruik)
   en het werkgeheugen (tot ±1,1 GB) samen **±4,4 GB**. Dat is structureel meer dan 4 GB, dus bij elke import ±0,3–0,5 GB
   swap gedurende ±100 s. Dat bleek bij Markt 27 én bij Rhoderlanden.
@@ -705,3 +708,114 @@ mee; Object Storage biedt 1 TB.
 - swap van de verwerker (`memory.swap.peak`) ±0;
 - totaal geheugen onder 5.120 MiB;
 - de classificatietijd per beeld vergelijken met 3,2 s (Markt 27) en 3,4 s (Rhoderlanden).
+
+## 16. Meting 5: brochure-import Beusemkolkweg 16, met processorgrens 5 GB (9 november 2026)
+
+**Bron:**
+- de fijne meting (elke 2 s, 130 metingen tijdens de import), via `fijnmeting-rapport.py`;
+- de verwerkingsregistratie;
+- de cgroup-tellers van de verwerker sinds de herstart van 13:33:40 UTC, dus inclusief deze import;
+- de logs.
+
+Er is niets opnieuw geïmporteerd of gewijzigd.
+
+**Invoer:**
+- **brochure:** Beusemkolkweg 16, PDF van 17,4 MB (18.268.525 bytes), 60 pagina's;
+- **verwerking:** project `beusemkolkweg 16`, verwerking 1, gestart 13:39:02 UTC, klaar 13:43:36 UTC, zonder fout;
+- **geïmporteerd:** 80 foto's, 9 plattegronden en 1 logo; 18 gegevens uit de tekst.
+
+### 16.1 Tijd per stap en per beeld
+
+| | Markt 27 (4 GB) | Rhoderlanden (4 GB) | Beusemkolkweg 16 (5 GB) |
+|---|---|---|---|
+| PDF | 5,2 MB, 12 p. | 8,3 MB, 50 p. | 17,4 MB, 60 p. |
+| Import (generator) | 7,4 s | 15,8 s | 20,8 s (PDF lezen 10,7 s, beelden 10,0 s) |
+| Controle | 0,4 s | 0,7 s | 1,0 s |
+| Beeldclassificatie | 117,4 s | 137,5 s | **249,5 s** |
+| Geclassificeerde beelden | 37 (34 foto's, 2 plattegronden, 1 logo) | 41 (40 foto's, 1 logo) | 90 (80 foto's, 9 plattegronden, 1 logo) |
+| **Per beeld** | 3,17 s | 3,35 s | **2,77 s** |
+| Gemiddelde beeldgrootte (opslag) | ±131 kB | ±1,4 MB | ±170 kB |
+| **Totaal** | 127,9 s | 156,7 s | **273,3 s** |
+
+**Een zuivere vergelijking van de geheugengrenzen is niet mogelijk.** De drie imports verschillen in drie opzichten:
+- **brochure en beelden:** het aantal, de pixelmaat en de compressie. Rhoderlanden heeft ±8× grotere beelden; het
+  decoderen kost tijd, de classificatie zelf werkt op een vaste invoermaat;
+- **het soort beeld:** plattegronden en logo's zijn eenvoudiger;
+- **de staat van de verwerker:** Beusemkolkweg startte met een **verse container**, met een lege cache na de herstart
+  voor de 5 GB-grens. Rhoderlanden draaide in een container met cache van eerdere verwerkingen.
+
+**Lezing:**
+- de lagere tijd per beeld (2,77 s) past bij geen swap (zie §16.3) en kleinere beelden;
+- hoeveel elk van beide bijdraagt, is met deze drie metingen niet te scheiden.
+
+### 16.2 CPU (elke 2 s)
+
+| | Gemiddeld | Maximaal |
+|---|---|---|
+| Verwerker, hele import (100 % = 1 vCPU) | 299 % | 328 % |
+| ‣ import en controle (10 metingen) | 138 % | 179 % |
+| ‣ beeldclassificatie (120 metingen) | 312 % | 328 % |
+| Systeem (100 % = 4 vCPU) | 77 % | 87 % |
+| API, database, web | max 4 %, 5 % en 0 % | |
+
+### 16.3 Geheugen en swap
+
+| | Gemiddeld | Maximaal |
+|---|---|---|
+| Verwerker: totaal (grens **5.120 MiB**) | 2.189 MB | **2.599 MB** (fijne meting); cgroup-piek `memory.peak` 2.672 MB |
+| Verwerker: werkgeheugen (`anon`) | 1.161 MB | 1.385 MB |
+| Verwerker: bestandscache (model en beelden) | 999 MB | 1.182 MB |
+| Verwerker: grens geraakt (`memory.events max`) | — | **0 keer** |
+| **Verwerker: swap** | 0 | **0 MB** (`memory.swap.peak` = 0) |
+| Systeem: in gebruik | 2.183 MB | 2.444 MB |
+| **Systeem: beschikbaar tijdens de piek** | 5.562 MB | minimum **5.302 MB** |
+| Systeem: swap | 16 MB | 16 MB (al aanwezig) |
+| API | 350 MB | 360 MB (stabiel; hoger dan eerder door de bekeken previews) |
+| Database, web | 32 en 4 MB | 40 en 4 MB |
+
+**Na afloop:** de verwerker op 1.252 MB, waarvan 60 MB werkgeheugen en 1.182 MB cache.
+
+### 16.4 Correctie op §12.4 en §14: de werkset van de classificatie
+
+- **Wat deze meting laat zien:** met een verse verwerker is de werkset tijdens de classificatie **±2,6 GB**:
+  ±1,4 GB werkgeheugen plus ±1,2 GB bestandscache van het model. En dat bij de zwaarste brochure (90 beelden).
+- **Wat in §12.4 werd aangenomen:** ±4,4 GB, met het model (3,3 GB) volledig als werkset. Dat was **te hoog**.
+  - De 3,3 GB cache bij Rhoderlanden bestond grotendeels uit verouderde cache van eerdere verwerkingen in dezelfde
+    container, plus de grote beelden.
+  - De kernel kon die niet snel genoeg vrijmaken binnen de grens van 4 GB, en verplaatste daarom werkgeheugen naar
+    swap.
+- **Gevolg:**
+  - de 5 GB-grens is ruim voldoende;
+  - de swap onder 4 GB kwam vooral door de combinatie met opgebouwde cache.
+  - De verhoging naar 5 GB blijft zinvol: ze geeft ruimte voor die cache, zodat er niet hoeft te worden uitgeswapt,
+    en marge voor grotere brochures.
+
+### 16.5 Opslag en database
+
+| | Vóór | Na Beusemkolkweg-import | Groei |
+|---|---|---|---|
+| Applicatieopslag totaal | 441,4 MB | 507,2 MB | **+65,9 MB** |
+| ‣ bron-PDF | — | 17,8 MB | |
+| ‣ import (95 bestanden: 80 foto's 14,4 MB, 9 plattegronden 1,0 MB, logo, rapport) | — | 33,0 MB | |
+| ‣ kwaliteitscontrole van de aanlevering (1×, 93 bestanden) | — | 15,1 MB | |
+| Database | 9,47 MB | 9,62 MB | **+0,15 MB** |
+| Rijen bestand / gegeven | 80 / 26 | 171 / 44 | +91 / +18 |
+| Schijf (totaal, inclusief buildbestanden) | 27–36 % | 36 % | geen structurele groei; de stijging sinds §6 komt van builds op de server |
+
+### 16.6 Fouten, vertragingen en herstarts
+
+- Geen fouten in de logs, geen OOM (`oom` en `oom_kill` = 0) en geen herstarts. De verwerker draait sinds de
+  grenswijziging van 13:33:40 UTC; db, api en web zijn niet herstart.
+- Geen vertraging door geheugen: de grens werd niet geraakt en er was geen swap.
+
+### 16.7 Beoordeling
+
+1. **De 5 GB-grens was bij deze zwaardere brochure ruim voldoende.** Piek 2,6–2,7 GB (±52 % van de grens), geen
+   swap, de grens niet geraakt.
+2. **De server** hield tijdens de piek ±5,3 GB beschikbaar. De CPX32 is voor deze verwerking ruim voldoende.
+3. **De beeldclassificatie** blijft CPU-gebonden (±3,1 vCPU) en schaalt met het aantal beelden: ±2,8–3,4 s per
+   beeld, bij 90 beelden ±4 minuten.
+4. **De conceptgeneratie van Beusemkolkweg 16 kan starten.**
+   - Er lopen geen verwerkingen en de verwerker is in rust.
+   - De generatie vroeg eerder hooguit ±0,7 GB werkgeheugen (§11, §13).
+   - De fijne meting staat aan.
