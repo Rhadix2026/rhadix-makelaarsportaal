@@ -236,7 +236,8 @@ verschil in kernen doet verwachten.
 
 **Toelichting op de geheugenpiek:**
 - De cgroup-teller `memory.peak` telt ook de **bestandscache** mee. Daaronder valt het SigLIP-model van 3,3 GB,
-  dat tijdens de classificatie wordt ingelezen. De kernel kan die cache terugwinnen.
+  dat tijdens de classificatie wordt ingelezen. De kernel kan die cache terugwinnen. *(Aanvulling na §12: tijdens de
+  classificatie is het model in gebruik en dus niet terug te winnen; het hoort dan bij de werkset.)*
 - De verwerker zat dus op zijn grens van 4 GB. De kernel heeft cache vrijgemaakt, en daarnaast 301 MB
   werkgeheugen naar swap verplaatst. Dat laatste wijst op echte geheugendruk, al bleef die beperkt.
 - De extra 2 GB swap (`memswap_limit` 6 GB) heeft een geheugenfout voorkomen.
@@ -418,3 +419,117 @@ en cache.
   onder de ±0,5 GB en kortstondig;
 - **anders naar 5 GB** (past op de CPX32: de overige containers gebruiken < 0,2 GB, het OS ±0,6 GB). Dat is een
   configuratiewijziging; alleen met akkoord.
+
+## 12. Meting 3: brochure-import Landgoed Rhoderlanden (9 november 2026)
+
+**Bron:**
+- de fijne meting (elke 2 s, 75 metingen tijdens de import), via `fijnmeting-rapport.py`;
+- de verwerkingsregistratie;
+- de cgroup-tellers van de verwerker (`memory.peak`, `memory.swap.peak`, `memory.events`);
+- de logs.
+
+Er is niets opnieuw geïmporteerd of gewijzigd.
+
+**Invoer:**
+- **brochure:** Landgoed "Rhoderlanden", PDF van 8,7 MB (8.672.978 bytes), 50 pagina's (Canva, via Heyzine);
+- **verwerking:** project `rhoderlanden`, verwerking 1, gestart 13:07:09 UTC, klaar 13:09:46 UTC, zonder fout.
+
+### 12.1 Tijd per stap
+
+| Stap | Rhoderlanden | Markt 27 |
+|---|---|---|
+| Import (generator) | 15,8 s (PDF lezen 8,7 s, beelden 7,1 s) | 7,4 s |
+| Controle van de aanlevering | 0,7 s | 0,4 s |
+| Beeldclassificatie | **137,5 s** voor 41 beelden (40 foto's en een logo), ±3,4 s per beeld | 117,4 s voor 37 beelden, ±3,2 s per beeld |
+| **Totaal** | **156,7 s** | 127,9 s |
+
+### 12.2 CPU (elke 2 s)
+
+| | Gemiddeld | Maximaal |
+|---|---|---|
+| Verwerker, hele import (100 % = 1 vCPU) | 283 % | 326 % |
+| ‣ import en controle (8 metingen) | 123 % | 141 % |
+| ‣ beeldclassificatie (67 metingen) | 303 % | 326 % |
+| Systeem (100 % = 4 vCPU) | 73 % | 83 % |
+| API, database, web | max 3 %, 7 % en 0 % | |
+
+### 12.3 Geheugen
+
+| | Gemiddeld | Maximaal |
+|---|---|---|
+| Verwerker: totaal (grens 4.096 MB) | 3.393 MB | **4.095 MB** (de grens is 1.402 keer geraakt; `memory.events max`) |
+| Verwerker: werkgeheugen (`anon`) | 697 MB | 1.118 MB |
+| Verwerker: bestandscache (`file`, vooral het SigLIP-model) | — | 3.292 MB |
+| Systeem: in gebruik | 1.606 MB | 2.094 MB |
+| Systeem: beschikbaar | 6.139 MB | minimum **5.651 MB** |
+| API, database, web | 124, 36 en 4 MB | |
+
+**Na afloop:** de verwerker staat op 3.344 MB, waarvan 29 MB werkgeheugen en 3.298 MB cache. Die cache is
+vrij te maken.
+
+### 12.4 Swap
+
+- **Verwerker:**
+  - de swap begint 49 s na de start, aan het begin van de classificatie;
+  - binnen ±15 s piek **509 MB**;
+  - daarna ±500 MB, tot het einde van de classificatie: **±100 s aaneengesloten**;
+  - na afloop nog 35 MB.
+- **Systeem:** piek 526 MB, nu 52 MB.
+- **Oorzaak:** tijdens de classificatie is het model in gebruik (±3,3 GB bestandspagina's). Samen met ±1 GB
+  werkgeheugen is de werkset **±4,4 GB**, en dat is meer dan de grens van 4 GB. De kernel verplaatst daarom ±0,5 GB
+  werkgeheugen naar swap.
+- **Correctie op §10:** de modelcache is tijdens de classificatie dus géén vrij terug te winnen ruimte, maar
+  feitelijk onderdeel van de werkset. Pas na afloop is hij vrij te maken.
+
+### 12.5 Opslag en database
+
+| | Vóór (na Markt 27) | Na Rhoderlanden | Groei |
+|---|---|---|---|
+| Applicatieopslag totaal | 75,4 MB | 149,9 MB | **+74,5 MB** |
+| ‣ bron-PDF | — | 8,5 MB | |
+| ‣ import (46 bestanden: 40 foto's, 57,5 MB; logo 1,4 MB; rapport) | — | 66,0 MB | |
+| Database | 9,3 MB | 9,4 MB | +0,1 MB |
+| Rijen bestand / gegeven | 38 / 23 | 80 / 26 | +42 / +3 |
+
+**Verhouding:**
+- de uitgepakte foto's zijn **6,6× zo groot als de PDF**, tegenover 0,8× bij Markt 27;
+- de beelden komen in hoge kwaliteit uit de Canva-PDF;
+- reken voor een brochure als deze op ±75 MB per import en, bij één concept, naar verwachting ±150 MB per woning.
+
+**Inhoudelijk** (geen capaciteitspunt): de import vond maar 3 gegevens in de tekst. De verkoopbrochure is vooral
+beeld en sfeer. Dat komt terug bij de beoordeling.
+
+### 12.6 Fouten, vertragingen en herstarts
+
+- Geen fouten in de logs, geen OOM (`oom` en `oom_kill` = 0) en geen herstarts.
+- **Vertraging door swap:** de classificatie per beeld is ±6 % langzamer dan bij Markt 27 (3,4 tegenover 3,2 s).
+  Ook de grotere beelden spelen daarbij mee, dus de swap kost hooguit enkele procenten.
+
+### 12.7 Vergelijking
+
+| | Nulmeting | Markt 27-import | Markt 27-concept | Rhoderlanden-import |
+|---|---|---|---|---|
+| Duur | — | 127,9 s | 36,2 s | 156,7 s |
+| Verwerker: CPU, gem. / max | 0,2 % | ±290 % | 125 / 381 % | 283 / 326 % |
+| Verwerker: geheugen, max | 78 MB | 4.096 MB | 1.114 MB | 4.095 MB |
+| Verwerker: werkgeheugen, max | — | onbekend (vóór de fijne meting) | 755 MB | 1.118 MB |
+| Verwerker: swap, piek | 0 | 301 MB | 0 | **509 MB, ±100 s** |
+| Systeem: beschikbaar, minimum | 6.877 MB | ±2,5 GB (schatting) | 6.166 MB | 5.651 MB |
+| Opslag: groei | — | +14,9 MB | +60,5 MB | +74,5 MB |
+
+### 12.8 Beoordeling: CPX32 en processorgrens
+
+1. **CPX32 (8 GB):** voldoende.
+   - Ook bij deze grotere brochure bleef er systeembreed ≥ 5,6 GB beschikbaar.
+   - De CPU (gemiddeld 73 %) en de schijf (±150 MB per woning, 107 GB vrij) zijn geen knelpunt.
+2. **Processorgrens van 4 GB:** werkbaar, maar aan de krappe kant.
+   - Toetsing aan de beslisregel uit §11.8: het werkgeheugen (1,1 GB) blijft ruim onder de 3 GB, maar de swap
+     (509 MB) ligt op de grens van 0,5 GB en duurde ±100 s. Dat is niet kortstondig.
+   - De oorzaak is structureel: model plus werkgeheugen is ±4,4 GB bij elke import.
+   - **Advies:** verhoog de grens naar **5 GB** (`MP_VERWERKER_GEHEUGEN=5g`, swapgrens 7g). Dat haalt de swap
+     tijdens de classificatie weg. Het past op de CPX32: de overige containers gebruiken < 0,2 GB, het OS ±0,6 GB,
+     en er blijft ±2 GB marge over.
+   - Het is een configuratiewijziging (`.env` en `up -d` voor de verwerker), dus alleen met akkoord. De 4 GB is niet
+     onveilig: zonder aanpassing gaat de pilot ook door, met enkele procenten vertraging en geen fouten.
+3. **De conceptgeneratie** (§11) raakt dit niet: 1,1 GB. De verwerker maakt de modelcache die nu nog vastzit,
+   vanzelf vrij zodra die ruimte nodig heeft.
