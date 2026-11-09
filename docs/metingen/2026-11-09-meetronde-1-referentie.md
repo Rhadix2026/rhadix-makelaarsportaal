@@ -219,3 +219,24 @@ als de vorige verwerking op *klaar* staat.
 - geen builds of uitrollen op de server;
 - geen handmatige back-ups;
 - de dagelijkse back-up om 02:30 UTC valt buiten de testtijd.
+
+## 7. Uitgevoerde verwijdering (9 november 2026, ±14:10 UTC, met akkoord van de gebruiker)
+
+- **Vooraf:** 0 lopende verwerkingen; precies de drie projecten uit §5.2, en geen bestanden van andere projecten.
+- **Database:** één transactie, met een controle dat de stand gelijk was aan de proefverwijdering (anders niets).
+  Daarin drie auditregels "verwijderd (meetronde 1, …; back-up restic 67535ef2)" en de `DELETE` van de drie projecten.
+  - Resultaat: project, bestand, verwerking, gegeven, aanlevering, besluit, concept en activiteit staan alle op 0.
+- **Opslag:** de drie projectmappen (694 + 726 + 1.466 = 2.886 bestanden) en de 77 bijbehorende miniaturen
+  (geselecteerd op sha256) zijn verwijderd. De opslag is daarna leeg.
+- **Ongewijzigd:**
+  - het kantoor Rhadix testmakelaars (zelfde ID, koppeling met Rhadix-organisatie `8f17e82b-…`, status actief,
+    geen huisstijl);
+  - de gebruikers *admin* (platformbeheer) en *rene makelaar* (kantoorbeheerder van Rhadix testmakelaars);
+  - de Rhadix-organisaties (2) en de 48 bestaande auditregels;
+  - de serverconfiguratie: `.env` gelijk aan de stand na de 5 GB-wijziging; containers niet herstart; grenzen gelijk;
+  - de meetbestanden op de server en in deze map;
+  - de back-up `67535ef2`.
+- **Na afloop:**
+  - `/api/gezond` gaf 200, lokaal en via Cloudflare;
+  - db en api *healthy*;
+  - de fijne meting, de 5-minutenmeting, de back-up en de hersteltest zijn actief.
