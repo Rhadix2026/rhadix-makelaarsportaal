@@ -669,3 +669,39 @@ mee; Object Storage biedt 1 TB.
   - de twee regels in `/srv/makelaarsportaal-test/.env`, daarna `docker compose … up -d verwerker`;
   - bij een lopende verwerking wacht de verwerker tot die klaar is (`stop_grace_period` 3 min);
   - **controle:** bij de volgende import moet `memory.swap.peak` van de verwerker ±0 blijven.
+
+## 15. Configuratiewijziging: processorgrens 4 GB naar 5 GB (9 november 2026, 13:33 UTC)
+
+**Akkoord:** gebruiker, 9-11-2026. Alleen de testomgeving; productie bestaat nog niet. De CPX32 blijft.
+
+| | Vóór | Na |
+|---|---|---|
+| `MP_VERWERKER_GEHEUGEN` (geheugengrens verwerker) | 4g (4.096 MiB) | **5g (5.120 MiB)** |
+| `MP_VERWERKER_GEHEUGEN_SWAP` (geheugen + swap, verwerker) | 6g | 6g (ongewijzigd) |
+| Swap die de verwerker daardoor maximaal kan gebruiken | 2.048 MiB | 1.024 MiB (gevolg van de ongewijzigde swapgrens) |
+| CPU verwerker | 4 | 4 (ongewijzigd) |
+| db / api / web | 768 MiB, 1 GiB, 128 MiB; 2, 2, 1 CPU | ongewijzigd, niet herstart |
+| Host-swap (4 GB-bestand, swappiness 10) | — | ongewijzigd |
+
+**Uitvoering:**
+1. **Vooraf:** 0 lopende verwerkingen (10 afgerond); de verwerker was in rust (0,2 % CPU).
+2. **`.env` bewaard** als `.env.voor-5g` (chmod 600). Alleen de regel `MP_VERWERKER_GEHEUGEN` aangepast (één regel in de diff).
+3. **Herstart van alleen de verwerker:** `docker compose … up -d --no-deps verwerker` (13:33:40 UTC). Daarbij geen
+   wijziging aan de image (`1ae95ae`) en geen migraties.
+
+**Controle na de herstart:**
+- **Limiet:** cgroup `memory.max` = 5.120 MiB en `memory.swap.max` = 1.024 MiB; `docker inspect` bevestigt het.
+- **Overige containers:** db, api en web hebben dezelfde limieten en dezelfde starttijden, 0 herstarts.
+- **Gezondheid:** `/api/gezond` lokaal 200 en via Cloudflare 200; de verwerker meldt "verwerker gestart".
+- **Gegevens ongewijzigd:**
+  - 2 projecten, 80 bestanden, 26 gegevens, 14 besluiten, 2 concepten, 2 gebruikers, 10 verwerkingen;
+  - database 9,47 MB; opslag 441,4 MB.
+- **Monitoring:**
+  - de fijne meting (elke 2 s tijdens verwerkingen) draait door en vindt de nieuwe container vanzelf (binnen 30 s);
+  - de 5-minutenmeting en de back-up-timer zijn actief.
+- **Systeem:** 6,8 GB beschikbaar.
+
+**Bij de derde capaciteitstest** (brochure-import):
+- swap van de verwerker (`memory.swap.peak`) ±0;
+- totaal geheugen onder 5.120 MiB;
+- de classificatietijd per beeld vergelijken met 3,2 s (Markt 27) en 3,4 s (Rhoderlanden).
