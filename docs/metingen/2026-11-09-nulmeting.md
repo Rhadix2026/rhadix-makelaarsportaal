@@ -533,3 +533,139 @@ beeld en sfeer. Dat komt terug bij de beoordeling.
      onveilig: zonder aanpassing gaat de pilot ook door, met enkele procenten vertraging en geen fouten.
 3. **De conceptgeneratie** (§11) raakt dit niet: 1,1 GB. De verwerker maakt de modelcache die nu nog vastzit,
    vanzelf vrij zodra die ruimte nodig heeft.
+
+## 13. Meting 4: conceptgeneratie Landgoed Rhoderlanden, v1 (9 november 2026)
+
+**Bron:**
+- de fijne meting (elke 2 s, 19 metingen), via `fijnmeting-rapport.py`;
+- de verwerkingsregistratie;
+- de cgroup-tellers;
+- de logs.
+
+Er is niets opnieuw gegenereerd of gewijzigd.
+
+**Verwerking:**
+- project `rhoderlanden`, verwerking 4, gestart 13:25:21 UTC (14:25 Nederlandse tijd), klaar 13:26:03 UTC, zonder fout;
+- resultaat: **concept v1**, *te beoordelen*, met 0 blokkerende punten en 16 waarschuwingen (voor publicatie).
+
+### 13.1 Tijd per stap
+
+| Stap | Rhoderlanden | Markt 27 (§11) |
+|---|---|---|
+| Aanleveren (export) en woningmap | 1,3 s | 0,6 s |
+| Bouw | **15,8 s** | 13,2 s |
+| Kwaliteitscontrole (DS-3, Chromium) | **24,2 s** | 22,0 s |
+| **Totaal** | **41,5 s** | 36,2 s |
+
+### 13.2 CPU (elke 2 s)
+
+| | Gemiddeld | Maximaal |
+|---|---|---|
+| Verwerker, totaal | 144 % | **379 %** |
+| ‣ bouw (8 metingen) | 249 % | 379 % |
+| ‣ kwaliteitscontrole (11 metingen) | 67 % | 171 % |
+| Systeem (100 % = 4 vCPU) | 38 % | 96 % |
+| API, database, web | max 2 %, 4 % en 0 % | |
+
+### 13.3 Geheugen
+
+| | Gemiddeld | Maximaal |
+|---|---|---|
+| Verwerker: werkgeheugen (`anon`) | 480 MB | **691 MB** |
+| Verwerker: totaal, inclusief cache | 3.889 MB | 4.073 MB |
+| Verwerker: bestandscache | — | 3.266–3.497 MB |
+| Systeem: in gebruik | 1.435 MB | 1.620 MB |
+| Systeem: beschikbaar | 6.311 MB | minimum **6.125 MB** |
+| API | 323 MB | 324 MB (159 werkgeheugen, 155 cache, door de previewbestanden; was 86–124) |
+| Database, web | 30 en 4 MB | 40 en 4 MB |
+
+**Over de verwerker:**
+- De hoge totaalwaarde is **cache die van de import was blijven staan**: het model en de beelden. Die is niet meer in
+  gebruik.
+- De kernel heeft die cache tijdens de generatie stap voor stap vrijgemaakt. De grens werd daarbij 358 keer geraakt
+  (`memory.events max`, van 1.402 naar 1.760).
+- Het werkgeheugen zelf (691 MB) blijft ver onder de grens.
+
+### 13.4 Swap
+
+- **Verwerker:** van 35 MB (restant van de import) naar **40 MB**, dus +5 MB, eenmalig in de bouwfase. Geen
+  merkbare duur.
+- **Systeem:** van 52 naar 56 MB.
+
+### 13.5 Opslag en database
+
+| | Na de import (§12) | Na concept v1 | Groei |
+|---|---|---|---|
+| Applicatieopslag totaal | 149,9 MB | **441,4 MB** | +291,5 MB |
+| ‣ conceptmap `concepten/v1` | — | **175,1 MB, 591 bestanden** | +175,1 MB |
+| — website (`site`) | — | 30,1 MB, 254 bestanden | |
+| — woningmap (generatorinvoer) | — | 87,3 MB, 286 bestanden | |
+| — export (`aanlevering`) | — | 57,5 MB, 44 bestanden | |
+| ‣ kwaliteitscontroles van de aanlevering (`controle`) | — | 115,0 MB, 88 bestanden | +115,0 MB (vóór het concept) |
+| Database | 9,4 MB | 9,5 MB | +0,1 MB |
+
+**Per woning, alles bij elkaar:**
+
+| | Markt 27 | Rhoderlanden |
+|---|---|---|
+| Bron, import, kwaliteitscontroles en één concept | ±75 MB | **±365 MB** |
+
+**Wat dit vooral bepaalt:** de omvang van de foto's. Bij Rhoderlanden zijn ze 57,5 MB, en elke kwaliteitscontrole en
+elke conceptversie bewaart er een eigen kopie van (export plus woningmap).
+
+**Gevolg:** met 107 GB vrij is dit geen knelpunt (20 woningen ≈ 1,5–7,5 GB). Wel groeien ook de back-ups
+mee; Object Storage biedt 1 TB.
+
+### 13.6 Fouten, vertragingen en herstarts
+
+- Geen fouten in de logs, geen OOM (`oom` en `oom_kill` = 0) en geen herstarts. De containers draaien sinds
+  12:40 UTC.
+- Er was geen vertraging door geheugen: de generatie duurde ±15 % langer dan bij Markt 27. Dat past bij de grotere
+  beelden en de extra pagina's.
+
+### 13.7 Vergelijking van alle metingen
+
+| | Nulmeting | Markt 27-import | Markt 27-concept | Rhoderlanden-import | Rhoderlanden-concept |
+|---|---|---|---|---|---|
+| Duur | — | 127,9 s | 36,2 s | 156,7 s | **41,5 s** |
+| Verwerker: CPU, gem. / max | 0,2 % | ±290 % | 125 / 381 % | 283 / 326 % | **144 / 379 %** |
+| Verwerker: werkgeheugen, max | 78 MB (totaal) | onbekend | 755 MB | 1.118 MB | **691 MB** |
+| Verwerker: totaal, max (inclusief cache) | 78 MB | 4.096 MB | 1.114 MB | 4.095 MB | 4.073 MB (cache van de import) |
+| Verwerker: swap, piek | 0 | 301 MB | 0 | 509 MB, ±100 s | **40 MB (+5)** |
+| Systeem: beschikbaar, minimum | 6.877 MB | ±2,5 GB (schatting) | 6.166 MB | 5.651 MB | **6.125 MB** |
+| Opslag: groei | — | +14,9 MB | +60,5 MB | +74,5 MB | **+291,5 MB** (inclusief controles) |
+| Fouten / herstarts | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | **0 / 0** |
+
+## 14. Advies na vier metingen
+
+**1. CPX32 (4 vCPU, 8 GB, 160 GB): handhaven voor de pilot.**
+- **Geheugen:** systeembreed bleef in alle metingen ≥ 5,6 GB beschikbaar.
+- **CPU:** de verwerker benut de 4 vCPU goed (classificatie ±3 vCPU, bouw kort 4). Eén verwerking tegelijk
+  (de wachtrij) houdt de interface bruikbaar: de API bleef onder 3 % CPU.
+- **Doorlooptijd:** een woning van brochure tot concept kost ±3–3,5 minuut machinetijd.
+- **Schijf:** ±75–365 MB per woning. Dat is geen knelpunt.
+- **Opschalen naar CPX42** is pas nodig bij productie en test tegelijk met zware verwerkingen, bij meerdere
+  verwerkers parallel, of als de doorlooptijd van de classificatie een probleem wordt.
+
+**2. Processorgrens: verhogen van 4 GB naar 5 GB** (`MP_VERWERKER_GEHEUGEN=5g`,
+`MP_VERWERKER_GEHEUGEN_SWAP=7g`). Onderbouwing:
+- **De import is bepalend, niet de conceptgeneratie.** Tijdens de classificatie zijn het model (±3,3 GB in gebruik)
+  en het werkgeheugen (tot ±1,1 GB) samen **±4,4 GB**. Dat is structureel meer dan 4 GB, dus bij elke import ±0,3–0,5 GB
+  swap gedurende ±100 s. Dat bleek bij Markt 27 én bij Rhoderlanden.
+- **De conceptgeneratie** gebruikt hooguit ±0,7 GB werkgeheugen en heeft de grens niet nodig.
+- **Ruimte:**
+  - het ergste geval met 5 GB is verwerker 5 GB, plus API, database en web ±0,4 GB, plus het OS ±0,6 GB =
+    **±6,0 GB van 7,7 GB**;
+  - de grootste gemeten systeembelasting is 2,1 GB in gebruik.
+  - Er blijft dus marge, en de swap van 4 GB blijft als vangnet.
+- **Effect:**
+  - geen swap meer tijdens de classificatie;
+  - een paar procent sneller;
+  - minder schrijfbelasting op de SSD;
+  - een grotere brochure (meer of grotere foto's) zit niet meteen tegen de grens.
+- **Risico van 4 GB handhaven:** klein. Er zijn geen fouten; het gaat om enkele procenten vertraging. Bij een nog
+  grotere brochure kan de swap wel verder oplopen.
+- **Uitvoering (met akkoord):**
+  - de twee regels in `/srv/makelaarsportaal-test/.env`, daarna `docker compose … up -d verwerker`;
+  - bij een lopende verwerking wacht de verwerker tot die klaar is (`stop_grace_period` 3 min);
+  - **controle:** bij de volgende import moet `memory.swap.peak` van de verwerker ±0 blijven.
