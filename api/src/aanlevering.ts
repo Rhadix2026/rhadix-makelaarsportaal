@@ -13,6 +13,7 @@ import { beeldInfo, bewaar, herkenType, MAX_GROOTTE, opslagPad, sha256 } from '.
 import { financieleKandidaten, kandidaten, vulAan, type Conflict, type Kandidaat } from './gegevens.ts';
 import { leesProject } from './projecten.ts';
 import { legVast } from './besluiten.ts';
+import { isVoortgangRegel, leesRegel, schrijver, Volger, type Gebeurtenis, type Voortgang } from './voortgang.ts';
 
 const BESTAND_VELDEN = `id, project_id, kantoor_id, soort, herkomst, verwerking_id, originele_naam, mime, grootte, sha256, breedte, hoogte,
   pagina, hoofdstuk, dubbel_van, dubbel_reden, classificatie, vervallen, geupload_op`;
@@ -101,14 +102,25 @@ export async function vraagVerwerking(c: pg.PoolClient, gebruiker: string, proje
   return { verwerking: v };
 }
 
-/** Draait het kindproces met de generatorfuncties; geeft de JSON-uitvoer terug. */
-function draaiKind(invoer: object): Promise<Record<string, any>> { // eslint-disable-line @typescript-eslint/no-explicit-any
+/**
+ * Draait het kindproces met de generatorfuncties; geeft de JSON-uitvoer terug. Voortgangsregels op
+ * stderr gaan live naar opGebeurtenis en blijven buiten de foutmelding.
+ */
+export function draaiKind(invoer: object, opGebeurtenis?: (g: Gebeurtenis) => void, script = join(ROOT, 'api', 'src', 'verwerker-kind.ts')): Promise<Record<string, any>> { // eslint-disable-line @typescript-eslint/no-explicit-any
   return new Promise((resolve, reject) => {
-    const k = spawn(process.execPath, ['--import', 'tsx', join(ROOT, 'api', 'src', 'verwerker-kind.ts')], { cwd: ROOT, env: process.env, stdio: ['pipe', 'pipe', 'pipe'] });
-    let uit = '', fout = '';
-    k.stdout.on('data', (d) => (uit += d)); k.stderr.on('data', (d) => (fout += d));
+    const k = spawn(process.execPath, ['--import', 'tsx', script], { cwd: ROOT, env: process.env, stdio: ['pipe', 'pipe', 'pipe'] });
+    let uit = '', fout = '', rest = '';
+    const regel = (r: string) => {
+      if (!isVoortgangRegel(r)) { fout += `${r}\n`; return; }
+      const g = leesRegel(r);
+      if (g) try { opGebeurtenis?.(g); } catch { /* voortgang mag de verwerking niet stoppen */ }
+    };
+    k.stdout.setEncoding('utf8'); k.stderr.setEncoding('utf8');
+    k.stdout.on('data', (d) => (uit += d));
+    k.stderr.on('data', (d) => { const r = (rest + d).split('\n'); rest = r.pop()!; r.forEach(regel); });
     k.on('error', reject);
     k.on('close', (code) => {
+      if (rest) regel(rest);
       if (code !== 0) return reject(new Error(fout.split('\n').filter(Boolean).slice(0, 3).join(' | ') || `kindproces stopte met code ${code}`));
       try { resolve(JSON.parse(uit)); } catch { reject(new Error('onleesbare uitvoer van de verwerking')); }
     });
@@ -125,6 +137,8 @@ export async function verwerkVolgende(): Promise<boolean> {
       ORDER BY aangevraagd_op FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING *`)).rows[0];
   if (!v) return false;
   const t0 = Date.now();
+  let voortgang: ReturnType<typeof schrijver> | null = null;
+  const schrijf = (s: Voortgang) => pool.query("UPDATE verwerking SET voortgang = $2 WHERE id = $1 AND status = 'bezig'", [v.id, JSON.stringify(s)]);
   try {
     // Losse foto's gaan altijd mee in de classificatie; die uit de brochure komen bij een import uit de nieuwe importmap.
     const fotos = (await pool.query(`SELECT id, opslag FROM bestand WHERE project_id = $1 AND soort = 'foto' AND herkomst = 'upload' AND NOT vervallen AND dubbel_van IS NULL`,
@@ -149,11 +163,23 @@ export async function verwerkVolgende(): Promise<boolean> {
       const brochure = (await pool.query(`SELECT id, opslag FROM bestand WHERE project_id = $1 AND soort = 'foto' AND herkomst = 'brochure' AND NOT vervallen AND dubbel_van IS NULL`, [v.project_id])).rows;
       invoer = { fotos: [...fotos, ...brochure].map((f) => ({ id: f.id, pad: opslagPad(f.opslag) })), classificeer: config.classificatie };
     }
-    const r = await draaiKind(invoer);
-    await alsGebruiker(v.aangevraagd_door, (c) => verwerkUitkomst(c, v, uitmap, r, Date.now() - t0));
+    // Voortgang op basis van de echte stappen (zie voortgang.ts); bij foto-indeling is het aantal vooraf bekend.
+    const n = (invoer as { fotos: unknown[] }).fotos.length;
+    voortgang = schrijver(new Volger(v.soort, config.classificatie && (v.soort === 'brochure-import' || n > 0), v.soort === 'foto-indeling' && config.classificatie ? n : 0), schrijf);
+    await voortgang.nu();
+    const r = await draaiKind(invoer, (g) => voortgang?.gebeurtenis(g));
+    // Vastleggen en opslaan gebeuren in één transactie die de verwerkingsrij vergrendelt: de laatste
+    // tussenstand ('verwerken') daarom vóór de transactie schrijven en de schrijver stoppen (geen
+    // gelijktijdige update van dezelfde rij). De eindstand gaat mee in de slot-update.
+    voortgang.gebeurtenis({ soort: 'fase', fase: 'verwerken' });
+    await voortgang.nu(); await voortgang.stop();
+    voortgang.gebeurtenis({ soort: 'fase', fase: 'afronden' });
+    const eind: Voortgang = { ...voortgang.stand(), percentage: 100, stap: null, klaar: null, totaal: null, eenheid: null };
+    await alsGebruiker(v.aangevraagd_door, (c) => verwerkUitkomst(c, v, uitmap, r, Date.now() - t0, eind));
   } catch (e) {
+    await voortgang?.stop();
     await pool.query("UPDATE verwerking SET status = 'mislukt', fout = $2, klaar_op = now(), duur_ms = $3 WHERE id = $1", [v.id, (e as Error).message.slice(0, 2000), Date.now() - t0]);
-  }
+  } finally { await voortgang?.stop(); }
   return true;
 }
 
@@ -171,7 +197,7 @@ export async function herstelVerwerkingen() {
   await pool.query("UPDATE verwerking SET status = 'mislukt', fout = 'onderbroken: de studio is tijdens de verwerking gestopt', klaar_op = now() WHERE status = 'bezig'");
 }
 
-async function verwerkUitkomst(c: pg.PoolClient, v: Record<string, any>, uitmap: string | null, r: Record<string, any>, duur: number) { // eslint-disable-line @typescript-eslint/no-explicit-any
+async function verwerkUitkomst(c: pg.PoolClient, v: Record<string, any>, uitmap: string | null, r: Record<string, any>, duur: number, eind: Voortgang) { // eslint-disable-line @typescript-eslint/no-explicit-any
   const gebruiker = v.aangevraagd_door as string;
   const stappen: Record<string, unknown> = { ...(r.rapport?.tijden_ms ? { import_delen: r.rapport.tijden_ms } : {}), ...r.tijden_ms };
   let samenvatting: Record<string, unknown> = {};
@@ -204,8 +230,8 @@ async function verwerkUitkomst(c: pg.PoolClient, v: Record<string, any>, uitmap:
   await bepaalDubbelen(c, v.project_id);
   stappen.classificatie_beschikbaar = r.classificatie?.beschikbaar ?? null;
   stappen.gegevens = samenvatting;
-  await c.query(`UPDATE verwerking SET status = 'klaar', klaar_op = now(), duur_ms = $2, stappen = $3, generator_commit = $4 WHERE id = $1`,
-    [v.id, duur, JSON.stringify(stappen), generatorCommit()]);
+  await c.query(`UPDATE verwerking SET status = 'klaar', klaar_op = now(), duur_ms = $2, stappen = $3, generator_commit = $4, voortgang = $5 WHERE id = $1`,
+    [v.id, duur, JSON.stringify(stappen), generatorCommit(), JSON.stringify(eind)]);
   await c.query('UPDATE project SET gewijzigd_op = now() WHERE id = $1', [v.project_id]);
   await audit(c, { gebruiker, actie: `verwerking_klaar`, tabel: 'verwerking', id: v.id, nieuw: { soort: v.soort, duur_ms: duur, ...samenvatting } });
 }
@@ -237,7 +263,7 @@ export async function overzicht(c: pg.PoolClient, projectId: string) {
   const project = await leesProject(c, projectId);
   if (!project) return null;
   const bestanden = (await c.query(`SELECT ${BESTAND_VELDEN} FROM bestand WHERE project_id = $1 ORDER BY soort, herkomst DESC, pagina NULLS FIRST, geupload_op`, [projectId])).rows;
-  const verwerkingen = (await c.query(`SELECT id, soort, volgnummer, status, aangevraagd_op, gestart_op, klaar_op, duur_ms, stappen, fout, generator_commit
+  const verwerkingen = (await c.query(`SELECT id, soort, volgnummer, status, aangevraagd_op, gestart_op, klaar_op, duur_ms, stappen, fout, generator_commit, voortgang
     FROM verwerking WHERE project_id = $1 ORDER BY volgnummer DESC LIMIT 10`, [projectId])).rows;
   const imp = await laatsteImport(c, projectId);
   const vast = new Map((await c.query('SELECT * FROM gegeven WHERE project_id = $1', [projectId])).rows.map((r) => [r.sleutel, r]));

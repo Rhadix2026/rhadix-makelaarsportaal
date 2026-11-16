@@ -122,6 +122,25 @@ npm run gebruiker -- deactiveer --email <adres>     # sessies worden direct beë
   blijven staan tot het voorstel wordt bevestigd.
 - **Scheiding:** `bestand`, `verwerking`, `gegeven` en `aanlevering` hebben elk een
   `kantoor_id` met RLS. Een trigger dwingt af dat dit gelijk is aan het kantoor van het project.
+- **Voortgang van een verwerking** (`api/src/voortgang.ts`, migratie 012, sinds 16-11-2026):
+  - **Bron:** echte procesgegevens. De stappen van `importeer()` (generator, `onStap`), per
+    afbeelding de beeldkenmerken (studio), per reeks van 8 foto's de classificatie (generator,
+    `classificeerBeeldenAsync`) en de verwerkingsstappen in de studio. Het kindproces meldt ze als
+    regels `##voortgang {json}` op stderr; de verwerker schrijft de stand naar
+    `verwerking.voortgang`: bij een nieuwe fase of stap meteen, anders hoogstens eens per seconde,
+    plus een hartslag elke 10 s.
+  - **Percentage:** een schatting met tijdsgewichten uit de capaciteitstest (±3 s per foto,
+    model laden ±10 s, rest van de import ±25 s). Zolang het aantal foto's onbekend is (tijdens de
+    PDF-import) toont de interface de fase met een bewegende balk, zonder percentage. Nooit 100 %
+    vóór de status `klaar`.
+  - **Niet los meetbaar:** fase 4 en 5 (gegevens vastleggen, opslaan) lopen in één
+    databasetransactie die de verwerkingsrij vergrendelt. De voortgang wordt daarom vóór die
+    transactie geschreven; de eindstand (100 %) gaat mee in de slot-update.
+  - **Statusverzoek:** `GET /api/projecten/:id/verwerkingen/:vid` (één rij, RLS, `no-store`).
+    De interface vraagt het elke 2 s (wachtrij 4 s), niet bij een verborgen tabblad, en laadt het
+    volledige overzicht alleen bij het einde opnieuw.
+  - **Fouten:** de interface toont een begrijpelijke melding (`foutMelding()`). De technische fout
+    blijft in `verwerking.fout` en gaat alleen naar platformbeheer.
 
 ## Broncontrole, kwaliteitscontrole en vrijgave (stap 5)
 

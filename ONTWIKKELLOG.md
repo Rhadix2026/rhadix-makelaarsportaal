@@ -154,3 +154,16 @@ Uitgevoerd in een tijdelijke demo-omgeving (`studio_demo`, 5481/8481), met de or
 | Back-up en herstel | pg_dump en tellingen; restic-rondgang op Linux-opslag (876 bestanden, checksums gelijk, `restic check` in orde); dump teruggezet in een tijdelijke db: tellingen gelijk. Restic via Docker Desktop-bestandsdeling op de Mac gaf I/O-fouten (bekend effect; op de server niet van toepassing) |
 | Server | `deploy/server/`: inrichten, nginx, Cloudflare-IP's, back-up, hersteltest, meting, systemd-timers, LEESMIJ; `deploy/uitrollen.sh`. Nog niets uitgevoerd op een server |
 | Tests | 72 groen |
+
+## Voortgangsindicatie brochure-import (16-11-2026)
+
+| Onderdeel | Uitkomst |
+|---|---|
+| Aanleiding | Tijdens een import alleen "bezig"; laatste grote import 380,3 s, waarvan 353,5 s beeldclassificatie |
+| Generator (`fff8f66`, staging, met akkoord) | `importeer()` meldt de bestaande stappen (`onStap`, `IMPORT_STAPPEN`); `siglip_classificeer.py` schrijft na het laden en per reeks van 8 een voortgangsregel naar stderr; `classificeerBeeldenAsync()` naast de ongewijzigde synchrone variant. Model, drempels, volgorde en uitkomsten ongewijzigd (test: async = sync op 10 foto's). 85 generatortests groen |
+| Studio | Migratie 012 (`verwerking.voortgang`); `api/src/voortgang.ts` (fasen, gewichten, afknijpen, hartslag, foutmeldingen); kindproces meldt de stappen; lichte statusroute; component `VerwerkingVoortgang`. De oude polling (heel aanleveroverzicht elke 1,5 s) is vervangen door één rij elke 2 s |
+| Meetbaar | Fase 1–2: 7 importstappen (start/klaar), aanleveringscontrole, beeldkenmerken per afbeelding. Fase 3: model laden, daarna per reeks van 8 foto's ("48 van 115"). Fase 4–5: één transactie, niet los te volgen |
+| Fouten | Begrijpelijke melding voor iedereen; technische fout alleen voor platformbeheer (ook in het aanleveroverzicht, waar die voorheen voor iedereen zichtbaar was) |
+| Valkuil vermeden | Voortgang schrijven tijdens de slottransactie zou een deadlock geven (rijvergrendeling); daarom vóór de transactie |
+| Tests | 108 groen (+11: berekening, afknijpen, hartslag, kindprotocol incl. fout, foutmeldingen, RLS eigen/ander kantoor en platform, herladen, echte import met testbrochure, echte classificatie 10 foto's). Bijgewerkt: vaste generatorcommit (borging) en migratielijst (status) |
+| Controle scherm | Tijdelijke demodatabase met nagebootste standen (geen import): 1100 en 390 px, geen consolefouten; demodatabase verwijderd |

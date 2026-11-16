@@ -15,6 +15,19 @@ import { dirname } from 'node:path';
 import { config } from './config.ts';
 import { VOOR_PUBLICATIE } from './fasen.ts';
 import { generatorCommit, generatorVersie, sharp, valideerManifest } from './generator.ts';
+import { voortgangRegel, type Gebeurtenis } from './voortgang.ts';
+
+/** Voortgang naar de verwerker (stderr, regel '##voortgang {json}'); stdout blijft alleen het resultaat. */
+const meld = (g: Gebeurtenis) => { process.stderr.write(voortgangRegel(g)); };
+
+/** Classificatie met tussenstanden als de generator dat kan (classificeerBeeldenAsync), anders zoals voorheen. */
+async function classificeer(paden: string[]) {
+  const { SIGLIP } = await gen('packages/ai/siglip.mjs');
+  meld({ soort: 'classificatie', fase: 'laden', klaar: 0, totaal: paden.length });
+  if (typeof SIGLIP.classificeerBeeldenAsync !== 'function') return SIGLIP.classificeerBeelden(paden);
+  return SIGLIP.classificeerBeeldenAsync(paden, { onVoortgang: (v: { fase: string; klaar: number; totaal: number }) =>
+    meld({ soort: 'classificatie', fase: v.fase === 'model_geladen' ? 'model_geladen' : 'beelden', klaar: v.klaar, totaal: v.totaal }) });
+}
 
 const gen = (rel: string) => import(pathToFileURL(join(config.generator, rel)).href);
 
@@ -134,16 +147,23 @@ async function main() {
     const { controleerAanlevering } = await gen('packages/aanlevering/index.mjs');
     let t = performance.now();
     // Tijdelijke slug volgens het ontwerp (import-…): nooit een echte woningmap in de generator.
-    const rapport = await importeer(invoer.pdf, { uit: invoer.uit, slug: `import-${createHash('sha1').update(invoer.uit).digest('hex').slice(0, 8)}` });
+    const rapport = await importeer(invoer.pdf, { uit: invoer.uit, slug: `import-${createHash('sha1').update(invoer.uit).digest('hex').slice(0, 8)}`,
+      onStap: (stap: string, status: 'start' | 'klaar') => meld({ soort: 'import', stap, status }) });
     tijden.import = Math.round(performance.now() - t);
     t = performance.now();
+    meld({ soort: 'controle', status: 'start' });
     const c = await controleerAanlevering(invoer.uit);
+    meld({ soort: 'controle', status: 'klaar' });
     tijden.controle = Math.round(performance.now() - t);
     uit.rapport = rapport;
     uit.controle = { ok: c.ok, fouten: c.fouten, waarschuwingen: c.waarschuwingen, samenvatting: c.samenvatting };
     // Kenmerken van de beelden die de import heeft weggeschreven (origineel uit de PDF).
     const beelden = [];
-    for (const b of rapport.beelden as { bestand: string | null; soort: string; pagina: number; origineel?: boolean; omslag?: boolean }[]) {
+    const lijst = (rapport.beelden as { bestand: string | null; soort: string; pagina: number; origineel?: boolean; omslag?: boolean }[]).filter((b) => b.bestand);
+    // Aantal foto's dat straks geclassificeerd wordt: de losse foto's plus de foto's uit de brochure.
+    const teClassificeren = invoer.classificeer ? invoer.fotos.length + lijst.filter((b) => b.soort === 'foto').length : 0;
+    meld({ soort: 'kenmerken', klaar: 0, totaal: lijst.length, fotos: teClassificeren });
+    for (const b of lijst) {
       if (!b.bestand) continue;
       const bytes = readFileSync(join(invoer.uit, b.bestand));
       const md = await sharp(bytes).metadata();
@@ -152,15 +172,15 @@ async function main() {
         breedte: draai ? md.height : md.width, hoogte: draai ? md.width : md.height,
         mime: md.format === 'png' ? 'image/png' : 'image/jpeg', dhash: b.soort === 'logo' ? null : await dhash(bytes),
         hoofdstuk: b.bestand.startsWith('fotos/') ? b.bestand.split('/')[1] : null });
+      meld({ soort: 'kenmerken', klaar: beelden.length, totaal: lijst.length });
     }
     uit.beelden = beelden;
     if (invoer.classificeer) invoer.fotos.push(...beelden.filter((b) => b.soort === 'foto').map((b) => ({ id: `brochure:${b.bestand}`, pad: join(invoer.uit!, b.bestand!) })));
   }
 
   if (invoer.classificeer && invoer.fotos.length) {
-    const { SIGLIP } = await gen('packages/ai/siglip.mjs');
     const t = performance.now();
-    const r = SIGLIP.classificeerBeelden(invoer.fotos.map((f) => f.pad));
+    const r = await classificeer(invoer.fotos.map((f) => f.pad));
     tijden.classificatie = Math.round(performance.now() - t);
     if (r.niet_beschikbaar) uit.classificatie = { beschikbaar: false, ontbreekt: r.niet_beschikbaar };
     else uit.classificatie = { beschikbaar: true, model: `${r.model}@${String(r.revisie).slice(0, 7)}`, laden_s: r.tijd_s?.laden, per_beeld_s: r.tijd_s?.per_beeld,

@@ -10,7 +10,7 @@ import { pathToFileURL } from 'node:url';
 import { config } from './config.ts';
 
 /** De commit waarop de studio is getest; een andere commit wordt gemeld, niet geweigerd. */
-export const VERWACHTE_COMMIT = '4eb7f2cc3f91cb1171120bc6c5657b773aef31ae';
+export const VERWACHTE_COMMIT = 'fff8f664ed824672c0d7c9f1237539465dbcbd72';
 
 const G = config.generator;
 const importeer = (rel: string) => import(pathToFileURL(join(G, rel)).href);

@@ -14,6 +14,7 @@ import { COOKIE, beeindigSessie, leesCookie, meldAan, sessieCookie, sessieGebrui
 import { meldAanViaRhadix, SSO_MELDING, ssoActief, wisSsoCache, type Huisstijl, type SsoFout } from './rhadixsso.ts';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { leesKantoor, lijstKantoren, maakKantoor, valideerKantoor, wijzigKantoor } from './kantoren.ts';
+import { foutMelding } from './voortgang.ts';
 import { bulkGoedkeuren, conflictVoor, extractieVoor, herstelVerwerkingen, leverAan, overzicht, slaOp, trekIn, vraagVerwerking, wekVerwerker } from './aanlevering.ts';
 import { bewerkGegeven } from './gegevens.ts';
 import { bevestigVoorstel, leesHuisstijl, logoUitBrochure, uploadLogo } from './huisstijl.ts';
@@ -330,9 +331,27 @@ export function bouwApp() {
   app.get<{ Params: { id: string } }>('/api/projecten/:id/rechten', async (req, reply) =>
     (await rechtOp(req.gebruiker, 'project', req.params.id)) ?? reply.code(404).send({ fout: 'Niet gevonden' }));
 
+  // Verwerkingen naar de interface: een begrijpelijke melding bij een fout; de technische fout alleen voor platformbeheer.
+  const toonVerwerking = <T extends { status: string; fout?: string | null }>(v: T, platform: boolean) =>
+    ({ ...v, fout: platform ? v.fout ?? null : null, melding: v.status === 'mislukt' ? foutMelding(v.fout) : null });
+
   app.get<{ Params: { id: string } }>('/api/projecten/:id/aanlevering', async (req, reply) => {
     const o = await alsGebruiker(req.gebruiker, (c) => overzicht(c, req.params.id));
-    return o ?? reply.code(404).send({ fout: 'Woningproject niet gevonden' });
+    if (!o) return reply.code(404).send({ fout: 'Woningproject niet gevonden' });
+    const platform = (await ik(req.gebruiker)).platformbeheer;
+    return { ...o, verwerkingen: o.verwerkingen.map((v) => toonVerwerking(v, platform)) };
+  });
+
+  // Lichte statusvraag voor de voortgangsweergave (één rij, via RLS: alleen het eigen kantoor of
+  // platformbeheer). De interface vraagt dit om de paar seconden zolang een verwerking loopt.
+  app.get<{ Params: { id: string; vid: string } }>('/api/projecten/:id/verwerkingen/:vid', async (req, reply) => {
+    if (!UUID.test(req.params.id) || !UUID.test(req.params.vid)) return reply.code(404).send({ fout: 'Niet gevonden' });
+    const v = await alsGebruiker(req.gebruiker, async (c) => (await c.query(
+      `SELECT id, soort, volgnummer, status, aangevraagd_op, gestart_op, klaar_op, duur_ms, voortgang, fout
+       FROM verwerking WHERE id = $1 AND project_id = $2`, [req.params.vid, req.params.id])).rows[0]);
+    if (!v) return reply.code(404).send({ fout: 'Niet gevonden' });
+    reply.header('cache-control', 'no-store');
+    return toonVerwerking(v, (await ik(req.gebruiker)).platformbeheer);
   });
 
   app.post<{ Params: { id: string }; Body: { soort?: string } }>('/api/projecten/:id/verwerkingen', { preHandler: productie }, async (req, reply) => {

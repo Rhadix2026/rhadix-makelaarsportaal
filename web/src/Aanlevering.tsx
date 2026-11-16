@@ -2,7 +2,8 @@
 // controleren (brochure → automatisch overgenomen → goedgekeurd) en de aanlevering opslaan.
 // Een website wordt hier nooit gegenereerd.
 import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react';
-import { api, ApiFout, upload, type Aanlevering as Data, type Bestand, type Ik, type Niveau } from './api.ts';
+import { api, ApiFout, upload, type Aanlevering as Data, type Bestand, type Ik, type Niveau, type Verwerking } from './api.ts';
+import { VerwerkingVoortgang } from './onderdelen/VerwerkingVoortgang.tsx';
 import { Badge, Kaart, type Toon } from './onderdelen/basis.tsx';
 import { kortNaam } from './onderdelen/bestandsnaam.ts';
 import { useActiviteit } from './onderdelen/activiteit.ts';
@@ -209,7 +210,15 @@ export function AanleverScherm({ id, ik }: { id: string; ik: Ik }) {
   const laad = useCallback(() => { void laadFase(); return api<Data>(`/api/projecten/${id}/aanlevering`).then(setD, (e) => setFout(e.message)); }, [id, laadFase]);
   useEffect(() => { void laad(); }, [laad]);
   const lopend = d?.verwerkingen.find((v) => v.status === 'wachtrij' || v.status === 'bezig');
-  useEffect(() => { if (!lopend) return; const t = setInterval(() => void laad(), 1500); return () => clearInterval(t); }, [lopend, laad]);
+  // Tijdens een verwerking vraagt VerwerkingVoortgang alleen de lichte status op; het volledige
+  // overzicht wordt pas bij het einde opnieuw geladen (geen zware polling).
+  const verwerkingKlaar = useCallback((n: Verwerking) => {
+    void laad();
+    const wat = n.soort === 'brochure-import' ? 'De brochure-import' : 'De foto-indeling';
+    setMelding(n.status === 'klaar'
+      ? { toon: 'goed', tekst: `${wat} is afgerond${n.duur_ms ? ` in ${sec(n.duur_ms)}` : ''}. De resultaten staan hieronder.` }
+      : { toon: 'fout', tekst: n.melding ?? 'De verwerking is niet gelukt.' });
+  }, [laad]);
 
   if (fout) return <><a className="terug" href={`#/projecten/${id}`}>← Woningproject</a><p className="melding melding-fout" role="alert">{fout}</p></>;
   if (!d) return null;
@@ -319,8 +328,11 @@ export function AanleverScherm({ id, ik }: { id: string; ik: Ik }) {
       <Kaart titel={`${beheer ? '2. ' : ''}Brochure-import`}>
         <div className="rij">
           <div>
-            {lopend ? <p><Badge>{lopend.status === 'wachtrij' ? 'in de wachtrij' : 'bezig'}</Badge> {lopend.soort === 'brochure-import' ? 'De brochure wordt geïmporteerd met de bestaande generator…' : 'Foto\'s worden ingedeeld…'}</p>
-              : laatste?.status === 'mislukt' ? <p className="melding melding-fout">De laatste verwerking is mislukt: {laatste.fout}</p>
+            {lopend ? <VerwerkingVoortgang key={lopend.id} projectId={id} start={lopend} onEinde={verwerkingKlaar} />
+              : laatste?.status === 'mislukt' ? <div className="melding melding-fout" role="alert">
+                  {laatste.melding ?? 'De laatste verwerking is niet gelukt.'}
+                  {ik.platformbeheer && laatste.fout && <details style={{ marginTop: 6 }}><summary>Technische details (platformbeheer)</summary><code style={{ whiteSpace: 'pre-wrap' }}>{laatste.fout}</code></details>}
+                </div>
               : imp ? <p className="stat-sub" style={{ marginTop: 0 }}>Import {imp.volgnummer}, {new Date(imp.klaar_op).toLocaleString('nl-NL')} · {sec(imp.duur_ms)} (lezen en indelen {sec(imp.stappen.import as number)}, controle {sec(imp.stappen.controle as number)}{imp.stappen.classificatie ? `, beeldclassificatie ${sec(imp.stappen.classificatie as number)}` : ''}) · generator {imp.generator_commit?.slice(0, 7)}</p>
               : <p className="stat-sub" style={{ marginTop: 0 }}>{brochure ? 'De brochure is aangeleverd en kan worden geïmporteerd.' : 'Lever eerst een brochure aan.'}</p>}
           </div>

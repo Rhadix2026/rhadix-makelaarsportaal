@@ -38,9 +38,9 @@ const PROD = join(homedir(), 'Developer', 'makelaarsplatform-productie');
 const git = (dir: string, ...a: string[]) => execFileSync('git', ['-C', dir, ...a], { encoding: 'utf8' }).trim();
 
 test('generator (ontwikkelrepo) en productie-instantie: vaste commit, schone werkmap', () => {
-  assert.equal(git(GEN, 'rev-parse', 'HEAD'), '4eb7f2cc3f91cb1171120bc6c5657b773aef31ae');
+  assert.equal(git(GEN, 'rev-parse', 'HEAD'), 'fff8f664ed824672c0d7c9f1237539465dbcbd72');
   assert.equal(git(GEN, 'status', '--porcelain'), '');
-  assert.equal(git(PROD, 'rev-parse', 'HEAD'), '4eb7f2cc3f91cb1171120bc6c5657b773aef31ae');
+  assert.equal(git(PROD, 'rev-parse', 'HEAD'), 'fff8f664ed824672c0d7c9f1237539465dbcbd72');
   assert.equal(git(PROD, 'status', '--porcelain'), '');
 });
 

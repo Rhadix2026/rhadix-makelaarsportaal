@@ -77,7 +77,12 @@ export type Bestand = {
   classificatie: { categorie: string; score: number; alternatief: string; controle: boolean; model: string } | null; vervallen: boolean; geupload_op: string;
 };
 export type Verwerking = { id: string; soort: string; volgnummer: number; status: 'wachtrij' | 'bezig' | 'klaar' | 'mislukt'; aangevraagd_op: string;
-  gestart_op: string | null; klaar_op: string | null; duur_ms: number | null; stappen: Record<string, unknown> | null; fout: string | null; generator_commit: string | null };
+  gestart_op: string | null; klaar_op: string | null; duur_ms: number | null; stappen: Record<string, unknown> | null;
+  /** Technische fout: alleen voor platformbeheer, anders null. */ fout: string | null;
+  /** Begrijpelijke melding bij status 'mislukt'. */ melding?: string | null;
+  generator_commit: string | null; voortgang?: VerwerkingVoortgang | null };
+export type VerwerkingVoortgang = { fase: string; fase_nr: number; fasen: number; tekst: string; stap: string | null;
+  klaar: number | null; totaal: number | null; eenheid: string | null; percentage: number | null; bijgewerkt: string };
 export type Kandidaat = { sleutel: string; label: string; waarde: unknown; eenheid?: string | null; bron: string; zekerheid?: string; verificatie?: string; toelichting?: string };
 export type Gegeven = { sleutel: string; label: string; waarde: unknown; eenheid: string | null; herkomst: 'brochure' | 'handmatig'; status: 'overgenomen' | 'goedgekeurd' | 'afgewezen';
   bron: string | null; gewijzigd_op: string; besluit: { soort: string; motivering: string; keuze: unknown } | null };
