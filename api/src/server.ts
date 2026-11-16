@@ -354,10 +354,18 @@ export function bouwApp() {
     return toonVerwerking(v, (await ik(req.gebruiker)).platformbeheer);
   });
 
+  // Twee gelijktijdige verzoeken: de database houdt de tweede tegen (migratie 013, of de unieke
+  // volgnummersleutel); dat is dezelfde situatie als 'er loopt al een verwerking'.
+  const LOPEND = 'Er loopt al een verwerking voor dit project';
+  const alLopend = (e: unknown) => (e as { code?: string; constraint?: string }).code === '23505'
+    && ['verwerking_een_lopend', 'verwerking_project_id_volgnummer_key'].includes((e as { constraint?: string }).constraint ?? '');
+
   app.post<{ Params: { id: string }; Body: { soort?: string } }>('/api/projecten/:id/verwerkingen', { preHandler: productie }, async (req, reply) => {
     const soort = req.body?.soort;
     if (soort !== 'brochure-import' && soort !== 'foto-indeling') return reply.code(400).send({ fout: 'Onbekende verwerking' });
-    const r = await alsGebruiker(req.gebruiker, (c) => vraagVerwerking(c, req.gebruiker, req.params.id, soort));
+    let r: Awaited<ReturnType<typeof vraagVerwerking>>;
+    try { r = await alsGebruiker(req.gebruiker, (c) => vraagVerwerking(c, req.gebruiker, req.params.id, soort)); }
+    catch (e) { if (alLopend(e)) return reply.code(409).send({ fout: LOPEND }); throw e; }
     if ('fout' in r) return reply.code(r.fout === 'onbekend' ? 404 : 409).send({ fout: ({
       onbekend: 'Woningproject niet gevonden', lopend: 'Er loopt al een verwerking voor dit project',
       geen_brochure: 'Lever eerst een brochure aan', geen_fotos: 'Er zijn nog geen foto\'s om in te delen' } as Record<string, string>)[r.fout!] });
@@ -467,7 +475,9 @@ export function bouwApp() {
 
   app.post<{ Params: { id: string } }>('/api/projecten/:id/concepten', { preHandler: productie }, async (req, reply) => {
     if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Woningproject niet gevonden' });
-    const r = await alsGebruiker(req.gebruiker, (c) => vraagConcept(c, req.gebruiker, req.params.id));
+    let r: Awaited<ReturnType<typeof vraagConcept>>;
+    try { r = await alsGebruiker(req.gebruiker, (c) => vraagConcept(c, req.gebruiker, req.params.id)); }
+    catch (e) { if (alLopend(e)) return reply.code(409).send({ fout: LOPEND }); throw e; }
     if ('fout' in r) return reply.code(409).send({ fout: r.reden });
     void wekVerwerker();
     return reply.code(202).send(r.verwerking);

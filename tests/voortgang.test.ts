@@ -235,3 +235,58 @@ test('foto-indeling met echte classificatie: tellingen per reeks in de voortgang
     assert.equal(eind.voortgang.percentage, 100);
   } finally { config.classificatie = was; }
 });
+
+// ── Herimport en gelijktijdige starts (licht: kleine synthetische brochure, zonder classificatie) ──
+test('herimport: zelfde voortgang als de eerste import; handmatige waarde blijft; tweede start tijdens een lopende geweigerd', { skip: !existsSync(fixture) }, async () => {
+  const r0 = await req('vg-beheer', 'POST', '/api/projecten', { kantoor_id: A, naam: 'Voortgang herimport', adres: 'Handmatigstraat 9' });
+  assert.equal(r0.statusCode, 201, r0.body);
+  const p = r0.json().id as string;
+  const dir = mkdtempSync(join(tmpdir(), 'vg-herimport-'));
+  try {
+    const { maakBrochure } = await import(pathToFileURL(fixture).href);
+    await maakBrochure(join(dir, 'b.pdf'));
+    const { readFileSync } = await import('node:fs');
+    const up = await app.inject({ method: 'POST', url: `/api/projecten/${p}/bestanden?soort=brochure`,
+      headers: { cookie: c['vg-beheer'], 'content-type': 'application/octet-stream', 'x-bestandsnaam': 'b.pdf' }, payload: readFileSync(join(dir, 'b.pdf')) });
+    assert.ok([200, 201].includes(up.statusCode), up.body);
+    for (const ronde of [1, 2]) {
+      const start = await req('vg-a1', 'POST', `/api/projecten/${p}/verwerkingen`, { soort: 'brochure-import' });
+      assert.equal(start.statusCode, 202, `ronde ${ronde}: ${start.body}`);
+      const v = start.json().id;
+      // Zolang deze in de wachtrij staat: geen tweede import, geen foto-indeling (ook niet door een collega).
+      for (const [wie, soort] of [['vg-a1', 'brochure-import'], ['vg-a2', 'brochure-import'], ['vg-a2', 'foto-indeling']] as const) {
+        const tweede = await req(wie, 'POST', `/api/projecten/${p}/verwerkingen`, { soort });
+        assert.equal(tweede.statusCode, 409, `ronde ${ronde} ${wie} ${soort}`); assert.match(tweede.json().fout, /loopt al een verwerking/);
+      }
+      const gezien = new Set<string>();
+      const kijk = setInterval(async () => { const x = (await pool.query('SELECT voortgang FROM verwerking WHERE id = $1', [v])).rows[0]?.voortgang; if (x) gezien.add(x.fase); }, 15);
+      await wekVerwerker();
+      clearInterval(kijk);
+      const eind = (await req('vg-a1', 'GET', `/api/projecten/${p}/verwerkingen/${v}`)).json();
+      assert.equal(eind.status, 'klaar', eind.melding ?? ''); assert.equal(eind.volgnummer, ronde);
+      assert.equal(eind.voortgang.percentage, 100, `ronde ${ronde}`);
+      assert.ok(gezien.size > 0, `ronde ${ronde}: tussenstanden gezien (${[...gezien].join(', ')})`);
+      const adres = (await req('vg-a1', 'GET', `/api/projecten/${p}/aanlevering`)).json().gegevens.find((g: { sleutel: string }) => g.sleutel === 'adres');
+      assert.equal(adres.vastgelegd.waarde, 'Handmatigstraat 9', `ronde ${ronde}: handmatige waarde blijft`);
+      assert.equal(adres.vastgelegd.herkomst, 'handmatig');
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('gelijktijdige starts: precies één wordt aangenomen, de rest krijgt een nette 409 (geen 500)', async () => {
+  const p = await project('Voortgang gelijktijdig');
+  const ruw = Buffer.alloc(80 * 60 * 3); for (let j = 0; j < ruw.length; j++) ruw[j] = (j * 7919) % 256;
+  const foto = await sharp(ruw, { raw: { width: 80, height: 60, channels: 3 } }).resize(320, 240).jpeg().toBuffer();
+  const up = await app.inject({ method: 'POST', url: `/api/projecten/${p}/bestanden?soort=foto`,
+    headers: { cookie: c['vg-beheer'], 'content-type': 'application/octet-stream', 'x-bestandsnaam': 'f.jpg' }, payload: foto });
+  assert.ok([200, 201].includes(up.statusCode), up.body);
+  const r = await Promise.all(Array.from({ length: 8 }, (_, i) => req(i % 2 ? 'vg-a1' : 'vg-a2', 'POST', `/api/projecten/${p}/verwerkingen`, { soort: 'foto-indeling' })));
+  const codes = r.map((x) => x.statusCode).sort();
+  assert.deepEqual(codes, [202, 409, 409, 409, 409, 409, 409, 409], codes.join(','));
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM verwerking WHERE project_id = $1 AND status IN ('wachtrij', 'bezig')", [p])).rows[0].n, 1);
+  // Ook rechtstreeks in de database: een tweede lopende verwerking voor hetzelfde project kan niet bestaan.
+  const g = (await pool.query("SELECT id FROM gebruiker WHERE email = 'vg-beheer@studio.test'")).rows[0].id;
+  await assert.rejects(pool.query(`INSERT INTO verwerking (project_id, kantoor_id, soort, volgnummer, status, aangevraagd_door) VALUES ($1, $2, 'foto-indeling', 99, 'wachtrij', $3)`, [p, A, g]),
+    (e: { constraint?: string }) => e.constraint === 'verwerking_een_lopend');
+  await wekVerwerker();
+});

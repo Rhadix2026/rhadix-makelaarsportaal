@@ -141,6 +141,10 @@ npm run gebruiker -- deactiveer --email <adres>     # sessies worden direct beë
     volledige overzicht alleen bij het einde opnieuw.
   - **Fouten:** de interface toont een begrijpelijke melding (`foutMelding()`). De technische fout
     blijft in `verwerking.fout` en gaat alleen naar platformbeheer.
+  - **Eén lopende verwerking per project** (migratie 013): naast de controle vooraf staat een unieke
+    index op `verwerking (project_id) WHERE status IN ('wachtrij', 'bezig')`. Twee gelijktijdige
+    starts geven één 202 en verder een nette 409. "Opnieuw importeren" is dezelfde verwerking als de
+    eerste import en toont dus dezelfde voortgang.
 
 ## Broncontrole, kwaliteitscontrole en vrijgave (stap 5)
 
