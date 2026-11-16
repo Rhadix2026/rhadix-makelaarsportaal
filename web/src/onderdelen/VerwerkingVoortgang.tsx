@@ -6,8 +6,15 @@ import { useEffect, useRef, useState } from 'react';
 import { api, type Verwerking } from '../api.ts';
 import { Badge } from './basis.tsx';
 
-const FASEN = ["PDF inlezen", 'Extraheren', "Foto's classificeren", 'Verwerken', 'Afronden'];
-const FASEN_FOTO = new Set([3, 4, 5]); // foto-indeling begint bij de classificatie
+// Korte fasenamen per soort verwerking; de volledige omschrijving komt van de server (voortgang.tekst).
+const FASEN: Record<string, string[]> = {
+  'brochure-import': ['PDF inlezen', 'Extraheren', "Foto's classificeren", 'Verwerken', 'Afronden'],
+  'foto-indeling': ['PDF inlezen', 'Extraheren', "Foto's classificeren", 'Verwerken', 'Afronden'],
+  conceptgeneratie: ['Voorbereiden', "Nieuwe foto's", 'Woningmap', 'Website opbouwen', 'Kwaliteitscontrole', 'Opslaan'],
+};
+const VANAF: Record<string, number> = { 'foto-indeling': 3 }; // foto-indeling begint bij de classificatie
+const NAAM: Record<string, string> = { 'brochure-import': 'De import', 'foto-indeling': 'De foto-indeling', conceptgeneratie: 'De conceptgeneratie' };
+const STANDAARD: Record<string, string> = { 'brochure-import': 'De brochure wordt geïmporteerd…', 'foto-indeling': "Foto's worden ingedeeld…", conceptgeneratie: 'Het concept wordt gemaakt…' };
 
 const duur = (ms: number) => {
   const s = Math.max(0, Math.round(ms / 1000));
@@ -46,21 +53,21 @@ export function VerwerkingVoortgang({ projectId, start, onEinde }: { projectId: 
   useEffect(() => { const k = setInterval(() => setNu(Date.now()), 1000); return () => clearInterval(k); }, []);
 
   const vg = v.voortgang;
-  const foto = v.soort === 'foto-indeling';
-  const fasen = FASEN.map((naam, i) => ({ naam, nr: i + 1 })).filter((f) => !foto || FASEN_FOTO.has(f.nr));
+  const bekend = v.soort in FASEN;
+  const fasen = (FASEN[v.soort] ?? []).map((naam, i) => ({ naam, nr: i + 1 })).filter((f) => f.nr >= (VANAF[v.soort] ?? 1));
   const pct = vg?.percentage ?? null;
   const sindsUpdate = vg ? nu - new Date(vg.bijgewerkt).getTime() : 0;
   const bezigSinds = v.gestart_op ? nu - new Date(v.gestart_op).getTime() : null;
 
   if (v.status === 'wachtrij') return (
     <div className="vv" aria-live="polite">
-      <p className="vv-kop"><Badge>in de wachtrij</Badge> {foto ? "De foto-indeling" : 'De import'} start zodra de lopende verwerking klaar is.</p>
+      <p className="vv-kop"><Badge>in de wachtrij</Badge> {NAAM[v.soort] ?? 'De verwerking'} start zodra de lopende verwerking klaar is.</p>
       <div className="balk vv-balk vv-onbepaald" role="progressbar" aria-label="In de wachtrij"><div /></div>
     </div>
   );
 
-  // Andere verwerkingen (conceptgeneratie) melden geen fasen: alleen 'bezig' met een bewegende balk.
-  if (v.soort !== 'brochure-import' && !foto) return (
+  // Onbekende soorten melden geen fasen: alleen 'bezig' met een bewegende balk.
+  if (!bekend) return (
     <div className="vv">
       <p className="vv-kop"><Badge>bezig</Badge> Er loopt een verwerking voor dit project.</p>
       <div className="balk vv-balk vv-onbepaald" role="progressbar" aria-label="Bezig"><div /></div>
@@ -70,7 +77,7 @@ export function VerwerkingVoortgang({ projectId, start, onEinde }: { projectId: 
 
   return (
     <div className="vv">
-      <p className="vv-kop"><Badge>bezig</Badge> {vg ? vg.tekst : foto ? "Foto's worden ingedeeld…" : 'De brochure wordt geïmporteerd…'}</p>
+      <p className="vv-kop"><Badge>bezig</Badge> {vg ? vg.tekst : STANDAARD[v.soort]}</p>
       <ol className="vv-fasen" aria-label="Verwerkingsfasen">
         {fasen.map((f) => {
           const st = !vg ? (f.nr === fasen[0].nr ? 'actief' : 'open') : f.nr < vg.fase_nr ? 'klaar' : f.nr === vg.fase_nr ? 'actief' : 'open';
@@ -81,7 +88,7 @@ export function VerwerkingVoortgang({ projectId, start, onEinde }: { projectId: 
       </ol>
       {pct !== null
         ? <div className="vv-rij">
-            <div className="balk vv-balk" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} aria-label="Voortgang"><div style={{ width: `${Math.max(2, pct)}%` }} /></div>
+            <div className="balk vv-balk vv-actief-balk" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} aria-label="Voortgang"><div style={{ width: `${Math.max(2, pct)}%` }} /></div>
             <span className="vv-pct">ca. {pct} %</span>
           </div>
         : <div className="balk vv-balk vv-onbepaald" role="progressbar" aria-label="Bezig; voortgang nog niet te berekenen"><div /></div>}

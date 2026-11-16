@@ -12,7 +12,7 @@ import { migreer, pool } from '../api/src/db.ts';
 import { draaiKind, wekVerwerker } from '../api/src/aanlevering.ts';
 import { config } from '../api/src/config.ts';
 import { sharp } from '../api/src/generator.ts';
-import { FASEN, foutMelding, leesRegel, schrijver, Volger, voortgangRegel, type Gebeurtenis, type Voortgang } from '../api/src/voortgang.ts';
+import { CONCEPT_FASEN, ConceptVolger, FASEN, foutMelding, leesBouwstap, leesRegel, schrijver, Volger, voortgangRegel, type Gebeurtenis, type Voortgang } from '../api/src/voortgang.ts';
 import { login, maakGebruiker, maakKantoorDirect } from './hulp.ts';
 
 const app = bouwApp();
@@ -289,4 +289,56 @@ test('gelijktijdige starts: precies één wordt aangenomen, de rest krijgt een n
   await assert.rejects(pool.query(`INSERT INTO verwerking (project_id, kantoor_id, soort, volgnummer, status, aangevraagd_door) VALUES ($1, $2, 'foto-indeling', 99, 'wachtrij', $3)`, [p, A, g]),
     (e: { constraint?: string }) => e.constraint === 'verwerking_een_lopend');
   await wekVerwerker();
+});
+
+// ── Conceptgeneratie ──────────────────────────────────────────────────────
+test('concept: zes fasen, percentage alleen uit afgeronde stappen, gelijk tijdens de kwaliteitscontrole, nooit 100', () => {
+  const v = new ConceptVolger();
+  const s: Voortgang[] = [];
+  const doe = (g: Gebeurtenis) => { v.verwerk(g); s.push(v.stand()); };
+  doe({ soort: 'concept', stap: 'voorbereiden', status: 'start' }); doe({ soort: 'concept', stap: 'voorbereiden', status: 'klaar' });
+  doe({ soort: 'concept', stap: 'woningmap', status: 'start' }); doe({ soort: 'concept', stap: 'woningmap', status: 'klaar' });
+  doe({ soort: 'concept', stap: 'bouwen', status: 'start' });
+  for (const [naam, ms] of [['valideren', 34], ['media', 3068], ['compositie', 3], ['componeren', 33], ['qa-feiten', 0], ['renderen', 942], ['assets', 29], ['sluier', 1898], ['renderen', 255], ['assets', 26], ['qa-site', 1]] as const)
+    doe({ soort: 'bouwstap', naam, ms });
+  doe({ soort: 'concept', stap: 'bouwen', status: 'klaar' });
+  doe({ soort: 'concept', stap: 'kwaliteit', status: 'start' });
+  const tijdensKwaliteit = v.stand().percentage!;
+  doe({ soort: 'concept', stap: 'kwaliteit', status: 'klaar' });
+  doe({ soort: 'concept', stap: 'opslaan', status: 'start' });
+  const p = s.map((x) => x.percentage!);
+  for (let i = 1; i < p.length; i++) assert.ok(p[i] >= p[i - 1], `daalt niet: ${p.join(',')}`);
+  assert.ok(tijdensKwaliteit > 35 && tijdensKwaliteit < 50, `vóór de kwaliteitscontrole ±40 % (bouw 16 s van ±41 s): ${tijdensKwaliteit}`);
+  assert.ok(p.at(-1)! >= 95 && p.at(-1)! <= 99, `bij opslaan bijna klaar: ${p.at(-1)}`);
+  assert.deepEqual([...new Set(s.map((x) => x.fase_nr))], [1, 3, 4, 5, 6], 'classificatie overgeslagen zonder nieuwe foto\'s');
+  assert.equal(s[0].fasen, CONCEPT_FASEN.length);
+  assert.equal(s.find((x) => x.stap === "Foto's verwerken")?.fase, 'bouwen');
+});
+
+test('concept met nieuwe foto\'s: classificatie telt mee en toont tellingen', () => {
+  const v = new ConceptVolger();
+  v.verwerk({ soort: 'concept', stap: 'voorbereiden', status: 'klaar' });
+  v.verwerk({ soort: 'classificatie', fase: 'laden', klaar: 0, totaal: 4 });
+  const voor = v.stand().percentage!;
+  v.verwerk({ soort: 'classificatie', fase: 'beelden', klaar: 4, totaal: 4 });
+  assert.equal(v.stand().fase, 'classificatie'); assert.equal(v.stand().klaar, 4); assert.ok(v.stand().percentage! > voor);
+});
+
+test('leesBouwstap: herkent de stapregels van mp bouw, verder niets', () => {
+  assert.deepEqual(leesBouwstap('  ✓ media          3068 ms'), { naam: 'media', ms: 3068 });
+  assert.deepEqual(leesBouwstap('  ✓ qa-site           1 ms'), { naam: 'qa-site', ms: 1 });
+  assert.equal(leesBouwstap('  ✓ aanlevering compleet (2 waarschuwing(en))'), null);
+  assert.equal(leesBouwstap('bouw linde-makelaars-markt-27 → /tmp/x'), null);
+  assert.equal(leesBouwstap('     ✗ contrast: te laag'), null);
+});
+
+test('conceptenoverzicht: begrijpelijke melding, technische fout alleen voor platformbeheer', async () => {
+  const p = await project('Voortgang concept fout');
+  const g = (await pool.query("SELECT id FROM gebruiker WHERE email = 'vg-beheer@studio.test'")).rows[0].id;
+  await pool.query(`INSERT INTO verwerking (project_id, kantoor_id, soort, volgnummer, status, aangevraagd_door, gestart_op, klaar_op, fout)
+    VALUES ($1, $2, 'conceptgeneratie', 1, 'mislukt', $3, now(), now(), 'mp bouw mislukt: Error: ENOENT /opt/generator/woningen/x/manifest.json')`, [p, A, g]);
+  const m = (await req('vg-a1', 'GET', `/api/projecten/${p}/concepten`)).json().generatie;
+  assert.equal(m.fout, null); assert.match(m.melding, /niet gelukt/); assert.doesNotMatch(m.melding, /ENOENT|\//);
+  assert.match((await req('vg-beheer', 'GET', `/api/projecten/${p}/concepten`)).json().generatie.fout, /ENOENT/);
+  assert.equal((await req('vg-b', 'GET', `/api/projecten/${p}/concepten`)).statusCode, 404);
 });

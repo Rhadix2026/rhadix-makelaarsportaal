@@ -3,7 +3,8 @@
 // concept accepteren of verbeterpunten vastleggen. Elke generatie is een nieuwe versie; niets wordt
 // overschreven of gepubliceerd.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { api, ApiFout, type Concept, type ConceptenOverzicht, type Ik, type Meetwaarde } from './api.ts';
+import { api, ApiFout, type Concept, type ConceptenOverzicht, type Ik, type Meetwaarde, type Verwerking } from './api.ts';
+import { VerwerkingVoortgang } from './onderdelen/VerwerkingVoortgang.tsx';
 import { Badge, Kaart, type Toon } from './onderdelen/basis.tsx';
 import { Fasebalk, useBeoordeling } from './Beoordeling.tsx';
 import { Meldingenoverzicht } from './onderdelen/Meldingen.tsx';
@@ -166,19 +167,20 @@ export function ConceptScherm({ id, ik, versie }: { id: string; ik: Ik; versie?:
   const gekozen = kies ?? gevraagd?.id ?? d?.concepten[0]?.id ?? null;
   useEffect(() => { if (gekozen) api<Concept>(`/api/concepten/${gekozen}`).then(setK, (e) => setFout(e.message)); else setK(null); }, [gekozen, d?.concepten.length]);
   const loopt = d?.generatie && ['wachtrij', 'bezig'].includes(d.generatie.status);
-  const [nu, setNu] = useState(Date.now());
-  useEffect(() => {
-    if (!loopt) return;
-    const t = setInterval(() => { setNu(Date.now()); }, 1000);
-    const p = setInterval(async () => { const r = await laad(); if (r && !['wachtrij', 'bezig'].includes(r.generatie?.status ?? '')) { setKies(null); void fase.laad(); } }, 2000);
-    return () => { clearInterval(t); clearInterval(p); };
-  }, [loopt, laad]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Tijdens de generatie vraagt VerwerkingVoortgang alleen de lichte status op; het overzicht wordt
+  // pas bij het einde opnieuw geladen (zelfde werkwijze als de brochure-import).
+  const [klaar, setKlaar] = useState<{ versie: number; duur: number | null } | null>(null);
+  const generatieKlaar = useCallback((n: Verwerking) => {
+    setKies(null); void laad(); void fase.laad();
+    if (n.status === 'klaar' && n.concept) { setKlaar({ versie: n.concept.versie, duur: n.duur_ms }); setMelding(null); }
+    else setMelding({ toon: 'fout', tekst: n.melding ?? 'De conceptgeneratie is niet gelukt.' });
+  }, [laad]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (fout) return <><a className="terug" href={`#/projecten/${id}`}>← Woningproject</a><p className="melding melding-fout" role="alert">{fout}</p></>;
   if (!d) return null;
 
   async function doe(fn: () => Promise<unknown>, gelukt?: string) {
-    setBezig(true); setMelding(null);
+    setBezig(true); setMelding(null); setKlaar(null);
     try { await fn(); if (gelukt) setMelding({ toon: 'goed', tekst: gelukt }); }
     catch (e) { setMelding({ toon: 'fout', tekst: e instanceof ApiFout ? e.message : 'De studio is niet bereikbaar' }); }
     finally { setBezig(false); await laad(); }
@@ -210,10 +212,14 @@ export function ConceptScherm({ id, ik, versie }: { id: string; ik: Ik; versie?:
       </div>
       {fase.d && <Fasebalk fasen={fase.d.fasen} projectId={id} />}
       {melding && <p className={`melding melding-${melding.toon}`} role="status" style={{ marginBottom: 16 }}>{melding.tekst}</p>}
-      {loopt && g && <p className="melding melding-let-op" role="status" style={{ marginBottom: 16 }}>
-        <strong>{g.status === 'wachtrij' ? 'In de wachtrij' : 'Bezig'}</strong>: exporteren, manifest maken, bouwen (automatische compositie) en de kwaliteitscontrole van Design System 1.0. {g.gestart_op ? `${duur(nu - new Date(g.gestart_op).getTime())} verstreken.` : ''} Dit duurt ongeveer een halve tot twee minuten.</p>}
+      {loopt && g && <div className="kaart" style={{ marginBottom: 16 }}><VerwerkingVoortgang key={g.id} projectId={id} start={g} onEinde={generatieKlaar} /></div>}
+      {klaar && <p className="melding melding-goed" role="status" style={{ marginBottom: 16 }}>
+        Conceptversie v{klaar.versie} is klaar{klaar.duur ? ` (${duur(klaar.duur)})` : ''}. <a href={`#/projecten/${id}/concept/v${klaar.versie}`} onClick={() => setKies(null)}>Bekijk de preview van v{klaar.versie} →</a></p>}
       {versie && !gevraagd && <p className="melding melding-let-op" role="status" style={{ marginBottom: 16 }}>Conceptversie v{versie} bestaat niet bij deze woning.{d.concepten.length ? ' De nieuwste versie wordt getoond.' : ''}</p>}
-      {g?.status === 'mislukt' && <p className="melding melding-fout" role="alert" style={{ marginBottom: 16 }}>De laatste generatie is mislukt: {g.fout}</p>}
+      {g?.status === 'mislukt' && !melding && <div className="melding melding-fout" role="alert" style={{ marginBottom: 16 }}>
+        {g.melding ?? 'De laatste conceptgeneratie is niet gelukt.'}
+        {ik.platformbeheer && g.fout && <details style={{ marginTop: 6 }}><summary>Technische details (platformbeheer)</summary><code style={{ whiteSpace: 'pre-wrap' }}>{g.fout}</code></details>}
+      </div>}
 
       {!d.concepten.length ? (
         <Kaart titel="Nog geen concept">

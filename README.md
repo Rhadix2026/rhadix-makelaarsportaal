@@ -145,6 +145,14 @@ npm run gebruiker -- deactiveer --email <adres>     # sessies worden direct beë
     index op `verwerking (project_id) WHERE status IN ('wachtrij', 'bezig')`. Twee gelijktijdige
     starts geven één 202 en verder een nette 409. "Opnieuw importeren" is dezelfde verwerking als de
     eerste import en toont dus dezelfde voortgang.
+  - **Conceptgeneratie** (sinds 16-11-2026): zelfde component, statusverzoek en schrijver, met zes
+    fasen (`CONCEPT_FASEN`): voorbereiden, nieuwe foto's classificeren (alleen als die er zijn),
+    woningmap, website opbouwen, kwaliteitscontrole, opslaan. Binnen de bouw leest de studio de
+    bestaande stapregels van `mp bouw` (`✓ <stap> <ms>`) live mee; de generator is daarvoor niet
+    gewijzigd. `mp kwaliteit` meldt geen tussenstappen: het percentage blijft dan op de afgeronde
+    stappen staan (±40 %), de balk laat met een glans zien dat het systeem actief is. Gewichten:
+    capaciteitsrapport tabel 4.2 (bouw 16 s, kwaliteitscontrole 24 s, overige ±1,5 s). Na afloop
+    een link naar de preview van de nieuwe versie.
 
 ## Broncontrole, kwaliteitscontrole en vrijgave (stap 5)
 

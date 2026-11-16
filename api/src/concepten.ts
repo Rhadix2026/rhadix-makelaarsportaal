@@ -2,6 +2,7 @@
 // (automatische compositie, mp bouw) lokaal gebouwd en met de kwaliteitscontrole van Design
 // System 1.0 (mp kwaliteit) getoetst. Elke generatie is een nieuwe, onveranderlijke versie in de
 // studio-opslag; de productie-instantie van de generator wordt niet gewijzigd. Geen publicatie.
+import type { Voortgang } from './voortgang.ts';
 import { randomBytes } from 'node:crypto';
 import { existsSync, statSync } from 'node:fs';
 import { extname, join, normalize, sep } from 'node:path';
@@ -28,10 +29,11 @@ export async function magGenereren(c: pg.PoolClient, projectId: string) {
 }
 
 export async function vraagConcept(c: pg.PoolClient, gebruiker: string, projectId: string) {
-  const m = await magGenereren(c, projectId);
-  if (!m.ok) return { fout: 'niet_klaar' as const, reden: m.reden };
+  // Eerst de lopende verwerking: anders meldt magGenereren() een onduidelijke reden ("geen verwerking meer bezig").
   const lopend = (await c.query("SELECT id FROM verwerking WHERE project_id = $1 AND status IN ('wachtrij', 'bezig')", [projectId])).rows[0];
   if (lopend) return { fout: 'lopend' as const, reden: 'Er loopt al een verwerking voor dit project' };
+  const m = await magGenereren(c, projectId);
+  if (!m.ok) return { fout: 'niet_klaar' as const, reden: m.reden };
   const p = (await c.query('SELECT kantoor_id FROM project WHERE id = $1', [projectId])).rows[0];
   const nr = (await c.query('SELECT coalesce(max(volgnummer), 0) + 1 AS n FROM verwerking WHERE project_id = $1', [projectId])).rows[0].n;
   const v = (await c.query(`INSERT INTO verwerking (project_id, kantoor_id, soort, volgnummer, aangevraagd_door, vingerafdruk)
@@ -59,7 +61,7 @@ export async function bereidVoor(c: pg.PoolClient, v: Rij) {
 }
 
 /** Na de generatie: de conceptversie vastleggen, met kwaliteitsrapport en metingen. */
-export async function registreer(c: pg.PoolClient, v: Rij, meta: Rij, r: Rij, duur: number) {
+export async function registreer(c: pg.PoolClient, v: Rij, meta: Rij, r: Rij, duur: number, eind: Voortgang | null = null) {
   const gebruiker = v.aangevraagd_door as string;
   const metingen = await meet(c, v.project_id, duur, r);
   const basis = await uitgangspunten(c, v.project_id);
@@ -69,8 +71,8 @@ export async function registreer(c: pg.PoolClient, v: Rij, meta: Rij, r: Rij, du
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id, versie`,
     [v.project_id, v.kantoor_id, meta.versie, v.id, meta.map, meta.invoerVinger, r.bouw.vingerafdruk, r.bouw.ontwerpsysteem.versie, r.bouw.profiel,
       r.generator_commit, JSON.stringify(r.bouw), JSON.stringify(r.kwaliteit ?? null), JSON.stringify(metingen), token, gebruiker, JSON.stringify(basis)])).rows[0];
-  await c.query(`UPDATE verwerking SET status = 'klaar', klaar_op = now(), duur_ms = $2, stappen = $3, generator_commit = $4, rapport = $5 WHERE id = $1`,
-    [v.id, duur, JSON.stringify(r.tijden_ms), r.generator_commit, JSON.stringify({ concept: concept.id, versie: concept.versie })]);
+  await c.query(`UPDATE verwerking SET status = 'klaar', klaar_op = now(), duur_ms = $2, stappen = $3, generator_commit = $4, rapport = $5, voortgang = coalesce($6, voortgang) WHERE id = $1`,
+    [v.id, duur, JSON.stringify(r.tijden_ms), r.generator_commit, JSON.stringify({ concept: concept.id, versie: concept.versie }), eind && JSON.stringify(eind)]);
   // Een concept staat klaar voor de interne beoordeling (geen publicatie).
   await c.query("UPDATE project SET status = 'interne_review', gewijzigd_op = now() WHERE id = $1", [v.project_id]);
   await legVast(c, { project: v.project_id, door: gebruiker, onderwerp: `concept v${concept.versie}`, handeling: 'gegenereerd',

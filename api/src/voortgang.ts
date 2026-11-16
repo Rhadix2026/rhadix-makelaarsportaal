@@ -32,10 +32,13 @@ export type Gebeurtenis =
   | { soort: 'controle'; status: 'start' | 'klaar' }
   | { soort: 'kenmerken'; klaar: number; totaal: number; fotos?: number } // fotos: aantal dat geclassificeerd wordt
   | { soort: 'classificatie'; fase: 'laden' | 'model_geladen' | 'beelden'; klaar: number; totaal: number }
-  | { soort: 'fase'; fase: 'verwerken' | 'afronden' };
+  | { soort: 'fase'; fase: 'verwerken' | 'afronden' }
+  // Conceptgeneratie
+  | { soort: 'concept'; stap: 'voorbereiden' | 'woningmap' | 'bouwen' | 'kwaliteit' | 'opslaan'; status: 'start' | 'klaar' }
+  | { soort: 'bouwstap'; naam: string; ms: number }; // een '✓ <stap> <ms>'-regel van mp bouw
 
 export type Voortgang = {
-  fase: FaseId; fase_nr: number; fasen: number; tekst: string;
+  fase: string; fase_nr: number; fasen: number; tekst: string;
   stap: string | null; klaar: number | null; totaal: number | null; eenheid: string | null;
   percentage: number | null; bijgewerkt: string;
 };
@@ -125,11 +128,87 @@ export class Volger {
   }
 }
 
+// ── Conceptgeneratie ──────────────────────────────────────────────────────
+// Zes fasen, zoals ze in het kindproces (verwerker-kind.ts, concept()) werkelijk bestaan.
+export const CONCEPT_FASEN = [
+  { id: 'voorbereiden', tekst: 'Woninggegevens en afbeeldingen voorbereiden' },
+  { id: 'classificatie', tekst: "Nieuwe foto's classificeren" },
+  { id: 'woningmap', tekst: 'Woningmap klaarzetten' },
+  { id: 'bouwen', tekst: 'Website opbouwen' },
+  { id: 'kwaliteit', tekst: 'Kwaliteitscontrole uitvoeren' },
+  { id: 'opslaan', tekst: 'Conceptversie opslaan' },
+] as const;
+
+// Tijdsgewichten in seconden. Bron: capaciteitsrapport 9-11-2026, tabel 4.2 (CPX32, zes generaties:
+// totaal 34–49 s, bouw 11–22 s, kwaliteitscontrole 22–26 s, overige stappen samen ±1–2 s) en voor de
+// classificatie de import (model ±10 s, ±3 s per foto). Binnen 'bouwen' de verdeling uit de
+// stapmeting van mp bouw (Markt 27 v1: media 3068, sluier 1898, renderen 942+255, overige < 100 ms).
+export const CONCEPT_GEWICHT = { voorbereiden: 0.5, laden: 10, per_foto: 3, woningmap: 0.5, bouwen: 16, kwaliteit: 24, opslaan: 0.5 };
+const BOUWSTAP_AANDEEL: Record<string, number> = { valideren: 0.01, media: 0.48, compositie: 0.005, componeren: 0.01, 'qa-feiten': 0.005,
+  renderen: 0.09, assets: 0.005, sluier: 0.3, 'qa-site': 0.005 }; // 'renderen' en 'assets' komen twee keer voor
+const BOUW_TEKST: Record<string, string> = { valideren: 'Manifest valideren', media: "Foto's verwerken", compositie: 'Indeling bepalen', componeren: "Pagina's samenstellen",
+  'qa-feiten': 'Feiten controleren', renderen: 'Pagina\'s renderen', assets: 'Bestanden klaarzetten', sluier: 'Leesbaarheid openingsbeeld meten', 'qa-site': 'Site controleren' };
+const CONCEPT_STAP_TEKST: Record<string, string> = { voorbereiden: 'Aanlevering controleren en manifest maken', woningmap: "Foto's en manifest klaarzetten",
+  bouwen: 'Bouw starten', kwaliteit: 'Kwaliteitsrapport opstellen (Design System 1.0)', opslaan: 'Conceptversie vastleggen', laden: 'Beeldherkenning starten',
+  beelden_classificeren: "Foto's classificeren" };
+
+/** Stand van een conceptgeneratie: fase, stap, tellingen en een percentage op basis van afgeronde stappen. */
+export class ConceptVolger {
+  private fase: (typeof CONCEPT_FASEN)[number]['id'] = 'voorbereiden';
+  private stap: string | null = null;
+  private klaar = new Set<string>();
+  private bouwGedaan = 0; // aandeel 0..1 van de bouw
+  private foto = { totaal: 0, klaar: 0, geladen: false };
+  private teller: { klaar: number; totaal: number } | null = null;
+
+  verwerk(g: Gebeurtenis) {
+    if (g.soort === 'concept') {
+      if (g.stap !== 'bouwen' || g.status === 'start') { this.fase = g.stap === 'bouwen' ? 'bouwen' : g.stap; }
+      if (g.status === 'klaar') { this.klaar.add(g.stap); if (g.stap === 'bouwen') this.bouwGedaan = 1; }
+      this.stap = g.status === 'start' ? g.stap : this.stap; this.teller = null;
+    } else if (g.soort === 'bouwstap') {
+      this.fase = 'bouwen'; this.stap = `bouw:${g.naam}`; this.teller = null;
+      this.bouwGedaan = Math.min(0.99, this.bouwGedaan + (BOUWSTAP_AANDEEL[g.naam] ?? 0));
+    } else if (g.soort === 'classificatie') {
+      this.fase = 'classificatie'; this.foto.totaal = g.totaal;
+      if (g.fase === 'laden') { this.stap = 'laden'; this.teller = null; }
+      else { this.foto.geladen = true; this.foto.klaar = g.klaar; this.stap = 'beelden_classificeren'; this.teller = { klaar: g.klaar, totaal: g.totaal }; }
+    }
+  }
+
+  private percentage() {
+    const G = CONCEPT_GEWICHT;
+    const cls = this.foto.totaal > 0 ? G.laden + this.foto.totaal * G.per_foto : 0;
+    const totaal = G.voorbereiden + cls + G.woningmap + G.bouwen + G.kwaliteit + G.opslaan;
+    let gedaan = (this.klaar.has('voorbereiden') ? G.voorbereiden : 0) + (this.klaar.has('woningmap') ? G.woningmap : 0)
+      + G.bouwen * this.bouwGedaan + (this.klaar.has('kwaliteit') ? G.kwaliteit : 0);
+    if (cls) gedaan += (this.foto.geladen ? G.laden : 0) + this.foto.klaar * G.per_foto;
+    return Math.max(0, Math.min(99, Math.floor((gedaan / totaal) * 100)));
+  }
+
+  stand(): Voortgang {
+    const nr = CONCEPT_FASEN.findIndex((f) => f.id === this.fase);
+    const stap = this.stap?.startsWith('bouw:') ? BOUW_TEKST[this.stap.slice(5)] ?? 'Website opbouwen' : this.stap ? CONCEPT_STAP_TEKST[this.stap] ?? null : null;
+    return { fase: this.fase, fase_nr: nr + 1, fasen: CONCEPT_FASEN.length, tekst: CONCEPT_FASEN[nr].tekst, stap,
+      klaar: this.teller?.klaar ?? null, totaal: this.teller?.totaal ?? null, eenheid: this.teller ? "foto's" : null,
+      percentage: this.percentage(), bijgewerkt: new Date().toISOString() };
+  }
+}
+
+/** Herkent een stapregel van mp bouw ('  ✓ media          3068 ms'); null voor andere regels. */
+export function leesBouwstap(regel: string): { naam: string; ms: number } | null {
+  const m = regel.match(/^\s*✓ ([a-z][a-z-]*)\s+(\d+) ms\s*$/);
+  return m ? { naam: m[1], ms: Number(m[2]) } : null;
+}
+
+/** Alles wat een stand bijhoudt (Volger voor import/foto-indeling, ConceptVolger voor concepten). */
+type Bijhouder = { verwerk(g: Gebeurtenis): void; stand(): Voortgang };
+
 /**
  * Schrijft de stand afgeknepen weg: hoogstens één keer per `minMs`, behalve bij een nieuwe fase of stap,
  * plus een hartslag (alleen `bijgewerkt`) zolang de verwerking loopt, zodat zichtbaar is dat ze leeft.
  */
-export function schrijver(volger: Volger, schrijf: (v: Voortgang) => Promise<unknown>, o: { minMs?: number; hartslagMs?: number } = {}) {
+export function schrijver(volger: Bijhouder, schrijf: (v: Voortgang) => Promise<unknown>, o: { minMs?: number; hartslagMs?: number } = {}) {
   const minMs = o.minMs ?? 1000; const hartslagMs = o.hartslagMs ?? 10_000;
   let laatst = 0, sleutel = '', wacht: ReturnType<typeof setTimeout> | null = null, gestopt = false;
   let keten: Promise<unknown> = Promise.resolve();

@@ -80,7 +80,8 @@ export type Verwerking = { id: string; soort: string; volgnummer: number; status
   gestart_op: string | null; klaar_op: string | null; duur_ms: number | null; stappen: Record<string, unknown> | null;
   /** Technische fout: alleen voor platformbeheer, anders null. */ fout: string | null;
   /** Begrijpelijke melding bij status 'mislukt'. */ melding?: string | null;
-  generator_commit: string | null; voortgang?: VerwerkingVoortgang | null };
+  generator_commit: string | null; voortgang?: VerwerkingVoortgang | null;
+  /** Na een geslaagde conceptgeneratie: de nieuwe conceptversie. */ concept?: { concept: string; versie: number } | null };
 export type VerwerkingVoortgang = { fase: string; fase_nr: number; fasen: number; tekst: string; stap: string | null;
   klaar: number | null; totaal: number | null; eenheid: string | null; percentage: number | null; bijgewerkt: string };
 export type Kandidaat = { sleutel: string; label: string; waarde: unknown; eenheid?: string | null; bron: string; zekerheid?: string; verificatie?: string; toelichting?: string };
@@ -175,4 +176,5 @@ export type Concept = ConceptKort & {
   indeling: Indeling | null; uitgangspunten: Uitgangspunten | null; tijd_achteraf: (ActieveTijd & { afgeleid: string }) | null;
 };
 export type ConceptenOverzicht = { project: Project; concepten: ConceptKort[]; mag_genereren: { ok: boolean; reden: string | null };
-  generatie: null | { id: string; status: string; aangevraagd_op: string; gestart_op: string | null; klaar_op: string | null; duur_ms: number | null; fout: string | null } };
+  /** De laatste conceptgeneratie (zelfde vorm als een verwerking; fout alleen voor platformbeheer). */
+  generatie: null | Verwerking };

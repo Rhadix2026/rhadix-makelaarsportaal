@@ -347,7 +347,8 @@ export function bouwApp() {
   app.get<{ Params: { id: string; vid: string } }>('/api/projecten/:id/verwerkingen/:vid', async (req, reply) => {
     if (!UUID.test(req.params.id) || !UUID.test(req.params.vid)) return reply.code(404).send({ fout: 'Niet gevonden' });
     const v = await alsGebruiker(req.gebruiker, async (c) => (await c.query(
-      `SELECT id, soort, volgnummer, status, aangevraagd_op, gestart_op, klaar_op, duur_ms, voortgang, fout
+      `SELECT id, soort, volgnummer, status, aangevraagd_op, gestart_op, klaar_op, duur_ms, voortgang, fout,
+         CASE WHEN soort = 'conceptgeneratie' AND status = 'klaar' THEN rapport END AS concept
        FROM verwerking WHERE id = $1 AND project_id = $2`, [req.params.vid, req.params.id])).rows[0]);
     if (!v) return reply.code(404).send({ fout: 'Niet gevonden' });
     reply.header('cache-control', 'no-store');
@@ -466,11 +467,13 @@ export function bouwApp() {
       const p = await leesProject(c, req.params.id);
       if (!p) return null;
       const m = await magGenereren(c, req.params.id);
-      const v = (await c.query(`SELECT id, status, volgnummer, aangevraagd_op, gestart_op, klaar_op, duur_ms, fout FROM verwerking
+      const v = (await c.query(`SELECT id, soort, status, volgnummer, aangevraagd_op, gestart_op, klaar_op, duur_ms, fout, voortgang FROM verwerking
         WHERE project_id = $1 AND soort = 'conceptgeneratie' ORDER BY volgnummer DESC LIMIT 1`, [req.params.id])).rows[0] ?? null;
       return { project: p, concepten: await lijstConcepten(c, req.params.id), mag_genereren: { ok: m.ok, reden: m.reden }, generatie: v };
     });
-    return r ?? reply.code(404).send({ fout: 'Woningproject niet gevonden' });
+    if (!r) return reply.code(404).send({ fout: 'Woningproject niet gevonden' });
+    // Zelfde regel als bij de aanlevering: begrijpelijke melding, technische fout alleen voor platformbeheer.
+    return { ...r, generatie: r.generatie && toonVerwerking(r.generatie, (await ik(req.gebruiker)).platformbeheer) };
   });
 
   app.post<{ Params: { id: string } }>('/api/projecten/:id/concepten', { preHandler: productie }, async (req, reply) => {

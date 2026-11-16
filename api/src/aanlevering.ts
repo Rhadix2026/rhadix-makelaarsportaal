@@ -13,7 +13,7 @@ import { beeldInfo, bewaar, herkenType, MAX_GROOTTE, opslagPad, sha256 } from '.
 import { financieleKandidaten, kandidaten, vulAan, type Conflict, type Kandidaat } from './gegevens.ts';
 import { leesProject } from './projecten.ts';
 import { legVast } from './besluiten.ts';
-import { isVoortgangRegel, leesRegel, schrijver, Volger, type Gebeurtenis, type Voortgang } from './voortgang.ts';
+import { ConceptVolger, isVoortgangRegel, leesRegel, schrijver, Volger, type Gebeurtenis, type Voortgang } from './voortgang.ts';
 
 const BESTAND_VELDEN = `id, project_id, kantoor_id, soort, herkomst, verwerking_id, originele_naam, mime, grootte, sha256, breedte, hoogte,
   pagina, hoofdstuk, dubbel_van, dubbel_reden, classificatie, vervallen, geupload_op`;
@@ -148,9 +148,15 @@ export async function verwerkVolgende(): Promise<boolean> {
     if (v.soort === 'conceptgeneratie') {
       // Conceptgeneratie: voorbereiden in de studio, bouwen en toetsen in het kindproces (mp bouw, mp kwaliteit).
       const k = await import('./concepten.ts');
+      voortgang = schrijver(new ConceptVolger(), schrijf);
+      await voortgang.nu();
       const voor = await alsGebruiker(v.aangevraagd_door, (c) => k.bereidVoor(c, v));
-      const r = await draaiKind(voor.invoer);
-      await alsGebruiker(v.aangevraagd_door, (c) => k.registreer(c, v, voor.meta, r, Date.now() - t0));
+      const r = await draaiKind(voor.invoer, (g) => voortgang?.gebeurtenis(g));
+      // Zelfde regel als bij de import: niet schrijven tijdens de slottransactie (rijvergrendeling).
+      voortgang.gebeurtenis({ soort: 'concept', stap: 'opslaan', status: 'start' });
+      await voortgang.nu(); await voortgang.stop();
+      const eind: Voortgang = { ...voortgang.stand(), percentage: 100, stap: null, klaar: null, totaal: null, eenheid: null };
+      await alsGebruiker(v.aangevraagd_door, (c) => k.registreer(c, v, voor.meta, r, Date.now() - t0, eind));
       return true;
     }
     if (v.soort === 'brochure-import') {

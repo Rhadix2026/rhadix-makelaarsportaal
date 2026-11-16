@@ -15,7 +15,7 @@ import { dirname } from 'node:path';
 import { config } from './config.ts';
 import { VOOR_PUBLICATIE } from './fasen.ts';
 import { generatorCommit, generatorVersie, sharp, valideerManifest } from './generator.ts';
-import { voortgangRegel, type Gebeurtenis } from './voortgang.ts';
+import { leesBouwstap, voortgangRegel, type Gebeurtenis } from './voortgang.ts';
 
 /** Voortgang naar de verwerker (stderr, regel '##voortgang {json}'); stdout blijft alleen het resultaat. */
 const meld = (g: Gebeurtenis) => { process.stderr.write(voortgangRegel(g)); };
@@ -34,14 +34,21 @@ const gen = (rel: string) => import(pathToFileURL(join(config.generator, rel)).h
 type Invoer = { pdf?: string; uit?: string; fotos: { id: string; pad: string }[]; classificeer: boolean; concept?: Concept };
 type Concept = { aanlevering: string; woning: string; site: string; ontwerpsysteem: string; classificaties: Record<string, Record<string, unknown>>; classificeer: boolean };
 
-/** Een mp-opdracht in de productie-instantie (cwd daar; schrijft alleen in genegeerde mappen en in --uit). */
-function mp(args: string[]): Promise<{ code: number; uit: string; ms: number }> {
+/** Een mp-opdracht in de productie-instantie (cwd daar; schrijft alleen in genegeerde mappen en in --uit).
+ *  opRegel krijgt elke regel van stdout live (alleen gelezen, voor de voortgang). */
+function mp(args: string[], opRegel?: (r: string) => void): Promise<{ code: number; uit: string; ms: number }> {
   const t = performance.now();
   return new Promise((resolve, reject) => {
     const k = spawn(process.execPath, [join(config.generator, 'tools', 'mp.mjs'), ...args], { cwd: config.generator,
       env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: join(config.generator, '.cache', 'ms-playwright'), ASTRO_TELEMETRY_DISABLED: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
-    let uit = '';
-    k.stdout.on('data', (d) => (uit += d)); k.stderr.on('data', (d) => (uit += d));
+    let uit = '', rest = '';
+    k.stdout.on('data', (d) => {
+      uit += d;
+      if (!opRegel) return;
+      const r = (rest + d).split('\n'); rest = r.pop()!;
+      for (const x of r) try { opRegel(x); } catch { /* voortgang mag de bouw niet stoppen */ }
+    });
+    k.stderr.on('data', (d) => (uit += d));
     k.on('error', reject);
     k.on('close', (code) => resolve({ code: code ?? 1, uit, ms: Math.round(performance.now() - t) }));
   });
@@ -58,6 +65,7 @@ function mp(args: string[]): Promise<{ code: number; uit: string; ms: number }> 
 async function concept(k: Concept) {
   const tijden: Record<string, number> = {};
   let t = performance.now();
+  meld({ soort: 'concept', stap: 'voorbereiden', status: 'start' });
   const { controleerAanlevering, naarManifest } = await gen('packages/aanlevering/index.mjs');
   const { altUitCategorie } = await gen('packages/ai/index.mjs');
   const a = await controleerAanlevering(k.aanlevering);
@@ -69,6 +77,7 @@ async function concept(k: Concept) {
   // De versie die bij het aanmaken van het project is vastgezet.
   if (k.ontwerpsysteem && k.ontwerpsysteem !== '0') manifest.ontwerpsysteem = k.ontwerpsysteem;
   tijden.aanleveren = Math.round(performance.now() - t);
+  meld({ soort: 'concept', stap: 'voorbereiden', status: 'klaar' });
 
   t = performance.now();
   const fotos = manifest.media.filter((m: { soort: string; publiceren?: boolean }) => m.soort === 'foto' && m.publiceren !== false);
@@ -80,8 +89,7 @@ async function concept(k: Concept) {
     else zonder.push({ m, pad: join(k.aanlevering, m.bron) });
   }
   if (zonder.length && k.classificeer) {
-    const { SIGLIP } = await gen('packages/ai/siglip.mjs');
-    const r = SIGLIP.classificeerBeelden(zonder.map((x) => x.pad));
+    const r = await classificeer(zonder.map((x) => x.pad));
     if (!r.niet_beschikbaar) r.resultaten.forEach((x: Record<string, unknown>, i: number) => {
       const { categorie, score, alternatief, alt_score, marge, controle } = x;
       zonder[i].m.classificatie = { categorie, score, alternatief, alt_score, marge, controle, model: `${r.model}@${String(r.revisie).slice(0, 7)}` };
@@ -91,6 +99,7 @@ async function concept(k: Concept) {
   tijden.classificatie = Math.round(performance.now() - t);
 
   t = performance.now();
+  meld({ soort: 'concept', stap: 'woningmap', status: 'start' });
   rmSync(k.woning, { recursive: true, force: true });
   mkdirSync(join(k.woning, 'media', 'foto'), { recursive: true });
   for (const x of kopie as { van: string; naar: string }[]) { mkdirSync(dirname(join(k.woning, x.naar)), { recursive: true }); cpSync(join(k.aanlevering, x.van), join(k.woning, x.naar)); }
@@ -98,12 +107,17 @@ async function concept(k: Concept) {
   const schema = valideerManifest(manifest);
   if (schema.length) throw new Error(`manifest ongeldig: ${schema.join('; ')}`);
   tijden.woningmap = Math.round(performance.now() - t);
+  meld({ soort: 'concept', stap: 'woningmap', status: 'klaar' });
 
-  const bouw = await mp(['bouw', k.woning, '--uit', k.site]);
+  meld({ soort: 'concept', stap: 'bouwen', status: 'start' });
+  const bouw = await mp(['bouw', k.woning, '--uit', k.site], (r) => { const s = leesBouwstap(r); if (s) meld({ soort: 'bouwstap', ...s }); });
   tijden.bouw = bouw.ms;
   if (!existsSync(`${k.site}.bouw.json`)) throw new Error(`mp bouw mislukt: ${bouw.uit.split('\n').filter((r) => /✗|Error|fout/i.test(r)).slice(0, 4).join(' | ') || `code ${bouw.code}`}`);
+  meld({ soort: 'concept', stap: 'bouwen', status: 'klaar' });
+  meld({ soort: 'concept', stap: 'kwaliteit', status: 'start' });
   const kw = await mp(['kwaliteit', k.woning, '--uit', k.site]);
   tijden.kwaliteit = kw.ms;
+  meld({ soort: 'concept', stap: 'kwaliteit', status: 'klaar' });
   // De runbestanden die mp in de productie-instantie achterlaat (.cache/<slug>-*, metingen/<slug>-*) bevatten
   // woninggegevens: verplaatsen naar de conceptmap, zodat de productie-instantie geen klantgegevens bewaart.
   const slug = k.woning.split('/').pop()!;

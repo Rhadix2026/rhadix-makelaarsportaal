@@ -90,9 +90,29 @@ test('Markt 27: vrijgave met alleen de verplichte punten, concept v1, preview, v
   const g1 = await req('a', 'POST', `/api/projecten/${P}/concepten`);
   assert.equal(g1.statusCode, 202, g1.body);
   assert.equal((await req('b', 'POST', `/api/projecten/${P}/concepten`)).statusCode, 404, 'een ander kantoor kan niet genereren');
+  // Geen dubbele generatieopdracht: ook een collega van hetzelfde kantoor krijgt 409 zolang deze loopt.
+  const dubbel = await req('kb', 'POST', `/api/projecten/${P}/concepten`);
+  assert.equal(dubbel.statusCode, 409, dubbel.body); assert.match(dubbel.json().fout, /loopt al een verwerking/);
+  // Voortgang tijdens de echte generatie (mp bouw, mp kwaliteit): fasen en percentage uit de verwerkingsrij.
+  const vid = g1.json().id as string;
+  const standen: { fase: string; percentage: number; stap: string | null }[] = [];
+  const kijk = setInterval(async () => {
+    const x = (await pool.query('SELECT voortgang FROM verwerking WHERE id = $1', [vid])).rows[0]?.voortgang;
+    if (x && JSON.stringify(x.stap) + x.percentage !== JSON.stringify(standen.at(-1)?.stap) + standen.at(-1)?.percentage) standen.push(x);
+  }, 25);
   await wekVerwerker();
+  clearInterval(kijk);
+  const fasen = [...new Set(standen.map((s) => s.fase))];
+  assert.ok(fasen.includes('bouwen') && fasen.includes('kwaliteit'), `fasen gezien: ${fasen.join(', ')}`);
+  assert.ok(standen.some((s) => s.fase === 'bouwen' && s.stap && s.stap !== 'Bouw starten'), `bouwstappen live: ${standen.map((s) => s.stap).join(' | ')}`);
+  for (let i = 1; i < standen.length; i++) assert.ok(standen[i].percentage >= standen[i - 1].percentage, 'percentage daalt niet');
+  // Na afloop: 100 %, en het statusverzoek (zelfde als bij een browserrefresh) wijst naar de nieuwe versie.
+  const status1 = (await req('a', 'GET', `/api/projecten/${P}/verwerkingen/${vid}`)).json();
+  assert.equal(status1.status, 'klaar'); assert.equal(status1.voortgang.percentage, 100); assert.equal(status1.concept.versie, 1);
+  assert.equal((await req('b', 'GET', `/api/projecten/${P}/verwerkingen/${vid}`)).statusCode, 404, 'ander kantoor ziet de voortgang niet');
   let lijst = (await req('beheer', 'GET', `/api/projecten/${P}/concepten`)).json();
   assert.equal(lijst.generatie.status, 'klaar', lijst.generatie.fout);
+  assert.equal(lijst.generatie.voortgang.percentage, 100);
   assert.equal(lijst.concepten.length, 1);
   const v1 = (await req('beheer', 'GET', `/api/concepten/${lijst.concepten[0].id}`)).json();
   assert.equal(v1.versie, 1); assert.equal(v1.status, 'te_beoordelen');
