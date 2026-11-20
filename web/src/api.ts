@@ -134,7 +134,7 @@ export type Beoordeling = {
   meldingen: Aanlevering['meldingen']; fotokwaliteit: Aanlevering['fotokwaliteit'];
   beslissingen: {
     rechten: { bevestigd: boolean; toelichting: string; op: string } | null; profiel: string | null; profiel_voorstel: { waarde: string; toelichting: string } | null;
-    domein: string | null; conceptadres: boolean; openingsbeeld: Bestand | null; openingsbeeld_norm: number; openingsbeeld_kandidaten: Bestand[]; openingsbeeld_voorstel: string | null;
+    domein: string | null; conceptadres: boolean; openingsbeeld: (Bestand & { kwaliteit?: 'goed' | 'beperkt' }) | null; openingsbeeld_norm: number; openingsbeeld_minimum: number; openingsbeeld_kandidaten: (Bestand & { kwaliteit: 'goed' | 'beperkt' })[]; openingsbeeld_voorstel: string | null;
     fotokwaliteit: { nodig: boolean; akkoord: boolean; besluit: { motivering: string; door: string; op: string } | null };
   };
   vrijgave: { vrijgegeven: boolean; actueel: boolean; op?: string; motivering?: string | null; vervallen_op?: string; vervallen_door?: string; betekenis?: string };

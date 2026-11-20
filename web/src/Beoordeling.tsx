@@ -80,7 +80,7 @@ function SnelleBeoordeling({ d, profielen, bezig, voerUit }: { d: Data; profiele
           <input id="snel-domein" placeholder={`leeg = tijdelijk conceptadres ${d.project.slug}.invalid`} value={v.domein ?? ''} onChange={zet('domein')} /></div>}
         {nodig.beeld && <div className="veld"><label htmlFor="snel-beeld">Openingsbeeld</label>
           <select id="snel-beeld" value={v.openingsbeeld} onChange={zet('openingsbeeld')}><option value="">Kies een foto</option>
-            {b.openingsbeeld_kandidaten.map((f) => <option key={f.id} value={f.id}>{f.herkomst === 'brochure' ? `brochure p. ${f.pagina}` : 'losse foto'}, {f.breedte}×{f.hoogte}{b.openingsbeeld_voorstel === f.id ? ' (voorstel)' : ''}</option>)}</select></div>}
+            {b.openingsbeeld_kandidaten.map((f) => <option key={f.id} value={f.id}>{f.herkomst === 'brochure' ? `brochure p. ${f.pagina}` : 'losse foto'}, {f.breedte}×{f.hoogte}{f.kwaliteit === 'beperkt' ? ' (lagere resolutie)' : ''}{b.openingsbeeld_voorstel === f.id ? ' (voorstel)' : ''}</option>)}</select></div>}
         {nodig.foto && <div className="veld"><label htmlFor="snel-foto">Fotokwaliteit (aanbevolen, optioneel): originelen ontbreken; waarom mag het eerste concept hiermee?</label>
           <input id="snel-foto" placeholder="Bijvoorbeeld: brochurebeelden; originelen opgevraagd" value={v.foto ?? ''} onChange={zet('foto')} /></div>}
       </div>
@@ -256,11 +256,12 @@ export function BeoordelingScherm({ id, ik }: { id: string; ik: Ik }) {
           </div>
           <div className="beslissing beslissing-breed">
             <div className="beslissing-kop">Openingsbeeld {b.openingsbeeld ? <Badge toon="goed">gekozen</Badge> : <Badge toon="fout">open</Badge>}</div>
-            <p className="bron">Liggende foto van minimaal {b.openingsbeeld_norm} px breed. {b.openingsbeeld_kandidaten.length} geschikt.</p>
+            <p className="bron">Liggende foto; norm {b.openingsbeeld_norm} px breed, kleiner (vanaf {b.openingsbeeld_minimum} px) kan met een waarschuwing over de beeldkwaliteit. {b.openingsbeeld_kandidaten.filter((f) => f.kwaliteit === 'goed').length} volgens de norm, {b.openingsbeeld_kandidaten.length} te kiezen.</p>
             <div className="openingsbeelden">{b.openingsbeeld_kandidaten.map((f) => (
               <figure key={f.id} className={`foto${b.openingsbeeld?.id === f.id ? ' foto-gekozen' : ''}`}>
                 <img src={`/api/bestanden/${f.id}/miniatuur`} alt={f.herkomst === 'brochure' ? `Brochurefoto pagina ${f.pagina}` : 'Losse foto'} loading="lazy" />
                 <figcaption><div className="chips"><span className="chip">{f.herkomst === 'brochure' ? `brochure p. ${f.pagina}` : 'losse foto'}</span><span className="chip">{f.breedte}×{f.hoogte}</span>
+                  {f.kwaliteit === 'beperkt' && <span className="chip chip-let-op">lagere resolutie</span>}
                   {b.openingsbeeld_voorstel === f.id && <span className="chip">voorstel import</span>}</div>
                   {beheer && b.openingsbeeld?.id !== f.id && <button type="button" className="tekstknop" disabled={bezig} onClick={() => beslis('openingsbeeld', { bestand_id: f.id }, 'Openingsbeeld gekozen.')}>Als openingsbeeld kiezen</button>}
                   {b.openingsbeeld?.id === f.id && <div className="bron"><strong>Gekozen</strong></div>}</figcaption>

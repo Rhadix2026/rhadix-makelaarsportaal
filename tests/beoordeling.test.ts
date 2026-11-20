@@ -88,8 +88,24 @@ test('Markt 27: van aanlevering via broncontrole en kwaliteitscontrole naar vrij
   assert.equal((await beslis('profiel', { profiel: 'stads' })).statusCode, 200);
   assert.equal((await beslis('websiteadres', { conceptadres: true })).statusCode, 200);
   b = await st();
-  const klein = b.broncontrole && (await req('beheer', 'GET', `/api/projecten/${P}/aanlevering`)).json().bestanden.find((x: { breedte: number; soort: string }) => x.soort === 'foto' && x.breedte < 1200);
-  assert.equal((await beslis('openingsbeeld', { bestand_id: klein.id })).statusCode, 400, 'te klein voor het openingsbeeld');
+  type F = { id: string; breedte: number; hoogte: number; soort: string; vervallen?: boolean; dubbel_van?: string | null };
+  const alle = ((await req('beheer', 'GET', `/api/projecten/${P}/aanlevering`)).json().bestanden as F[]).filter((x) => x.soort === 'foto' && !x.vervallen && !x.dubbel_van);
+  // Niet te kiezen: staand of smaller dan het minimum (800 px).
+  const ongeschikt = alle.find((x) => x.breedte / x.hoogte < 1.2 || x.breedte < 800);
+  assert.ok(ongeschikt, 'testset bevat een staande of kleine foto');
+  assert.equal((await beslis('openingsbeeld', { bestand_id: ongeschikt!.id })).statusCode, 400, 'staand of te klein voor het openingsbeeld');
+  // Wel te kiezen, met een waarschuwing: liggend, 800–1199 px ('beperkt'); de norm blijft een aanbevolen punt.
+  const beperkt = alle.find((x) => x.breedte / x.hoogte >= 1.2 && x.breedte >= 800 && x.breedte < 1200);
+  if (beperkt) {
+    assert.equal(b.beslissingen.openingsbeeld_kandidaten.find((x: { id: string }) => x.id === beperkt.id)?.kwaliteit, 'beperkt');
+    assert.equal((await beslis('openingsbeeld', { bestand_id: beperkt.id })).statusCode, 200, 'lagere resolutie: bewust te kiezen');
+    const na = await st();
+    assert.equal(punt(na, 'openingsbeeld'), true);
+    const kw = na.checklist.find((x: { code: string }) => x.code === 'openingsbeeld_kwaliteit');
+    assert.equal(kw.ok, false); assert.equal(kw.verplicht, false, 'beeldnorm: aanbevolen, niet blokkerend');
+  }
+  // Automatische voorkeur: een foto volgens de norm, als die er is.
+  assert.equal(b.beslissingen.openingsbeeld_kandidaten.find((x: { id: string }) => x.id === b.beslissingen.openingsbeeld_voorstel)?.kwaliteit, 'goed');
   assert.ok(b.beslissingen.openingsbeeld_voorstel);
   assert.equal((await beslis('openingsbeeld', { bestand_id: b.beslissingen.openingsbeeld_voorstel })).statusCode, 200);
   assert.equal(punt(await st(), 'fotokwaliteit'), false, 'originelen nodig: beslissing vereist');

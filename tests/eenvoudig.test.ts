@@ -64,6 +64,9 @@ import { controleerDomein, domeinVoorstel, geldigNlDomein, wisDomeinCache } from
 test('domeinvoorstel uit het adres en .nl-validatie', () => {
   assert.equal(domeinVoorstel('Denekamperstraat 23B'), 'denekamperstraat23b.nl');
   assert.equal(domeinVoorstel('Markt 27'), 'markt27.nl');
+  assert.equal(domeinVoorstel('Markt 27', 'Wolvega'), 'markt27wolvega.nl', 'met de plaats');
+  assert.equal(domeinVoorstel('Denekamperstraat 23B', 'Ootmarsum'), 'denekamperstraat23bootmarsum.nl');
+  assert.equal(domeinVoorstel('Markt 27', 'x'.repeat(60)), 'markt27.nl', 'te lang met plaats: zonder plaats');
   assert.equal(domeinVoorstel("Hoofdstraat 12-a 'De Eik'"), 'hoofdstraat12adeeik.nl');
   assert.equal(domeinVoorstel('Kerkweg 1, Ëibergen'), 'kerkweg1eibergen.nl');
   assert.equal(domeinVoorstel(null), null);
@@ -90,7 +93,7 @@ test('keuzes via de API: domeinwens met servercontrole, zon/schaduw, organisatie
     const p = (await req('a', 'POST', '/api/projecten', { kantoor_id: A, naam: 'Keuzes A', profiel: 'buitenplaats' })).json();
     await pool.query("UPDATE project SET adres = 'Denekamperstraat 23B', plaats = 'Beuningen' WHERE id = $1", [p.id]);
     const k = (await req('a', 'GET', `/api/projecten/${p.id}/keuzes`)).json();
-    assert.equal(k.domein.voorstel, 'denekamperstraat23b.nl');
+    assert.equal(k.domein.voorstel, 'denekamperstraat23bbeuningen.nl', 'voorstel uit adres en plaats');
     assert.deepEqual(k.fotos, []);
     assert.equal(k.openingsbeeld.gekozen, null);
     wisDomeinCache();
@@ -129,4 +132,19 @@ test('keuzes via de API: domeinwens met servercontrole, zon/schaduw, organisatie
     const log = (await req('a', 'GET', `/api/projecten/${p.id}/beoordeling`)).json().besluiten.map((x: { onderwerp: string; handeling: string }) => `${x.onderwerp}:${x.handeling}`);
     assert.ok(log.includes('domeinwens:gecontroleerd: beschikbaar') && log.includes('zonschaduw:niet gewenst'), log.join(','));
   } finally { config.rdapNl = vorig; nep.close(); }
+});
+
+// ── Stap 3A.3: homepagefoto met lagere resolutie ──────────────────────────
+import { HERO_MINIMUM, kiesbaarAlsOpeningsbeeld, nietBlokkerendVoorIntern } from '../api/src/fasen.ts';
+
+test('homepagefoto: liggend vanaf het minimum kiesbaar; beeldnorm blokkeert het interne concept alleen zonder bewuste keuze', () => {
+  assert.equal(HERO_MINIMUM, 800);
+  assert.equal(kiesbaarAlsOpeningsbeeld({ breedte: 1181, hoogte: 787 }), true, '1181 px liggend: kiesbaar');
+  assert.equal(kiesbaarAlsOpeningsbeeld({ breedte: 799, hoogte: 500 }), false, 'onder het minimum');
+  assert.equal(kiesbaarAlsOpeningsbeeld({ breedte: 1600, hoogte: 1500 }), false, 'niet liggend');
+  const norm = 'geen liggende foto van minimaal 1200 px breed voor het openingsbeeld';
+  assert.equal(nietBlokkerendVoorIntern(norm, true), true, 'bewust gekozen kleinere foto');
+  assert.equal(nietBlokkerendVoorIntern(norm, false), false, 'zonder keuze blijft het een blokkade');
+  assert.equal(nietBlokkerendVoorIntern('rechten.bevestigd ontbreekt', false), true);
+  assert.equal(nietBlokkerendVoorIntern("'adres' ontbreekt", true), false, 'andere fouten blijven blokkeren');
 });

@@ -18,7 +18,7 @@ import { generatorCommit, generatorModule, generatorVersie, huisstijlFuncties, p
 import { laatsteImport, overzicht } from './aanlevering.ts';
 import { opslagPad } from './opslag.ts';
 import { deelControleIn } from './indeling.ts';
-import { VOOR_PUBLICATIE } from './fasen.ts';
+import { HERO_MINIMUM, kiesbaarAlsOpeningsbeeld, nietBlokkerendVoorIntern } from './fasen.ts';
 
 type Rij = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -193,10 +193,10 @@ const pad = (t: string) => t.replace(/(?:compositie|verhaal)\.hoofdstukken\[(\d+
   (_m, h, a, l) => `hoofdstuk ${+h + 1}, alinea ${+a + 1}${l != null ? `, opsomming ${+l + 1}` : ''}`);
 const leesbaar = (f: string) => { for (const [rx, t] of VERTAAL) if (rx.test(f)) return f.replace(/^.*$/, () => t.replace('$1', f.match(rx)?.[1] ?? '')); return f; };
 
-export function deelIn(r: Rij | null) {
+export function deelIn(r: Rij | null, heroBewustGekozen = false) {
   const uit = { blokkerend: [] as { bron: string; tekst: string }[], aandacht: [] as { bron: string; tekst: string }[], info: [] as { bron: string; tekst: string }[] };
   if (!r) return uit;
-  for (const f of r.aanlevering?.fouten ?? []) (VOOR_PUBLICATIE.test(f) ? uit.aandacht : uit.blokkerend).push({ bron: 'aanleveringscontrole', tekst: leesbaar(f) });
+  for (const f of r.aanlevering?.fouten ?? []) (nietBlokkerendVoorIntern(f, heroBewustGekozen) ? uit.aandacht : uit.blokkerend).push({ bron: 'aanleveringscontrole', tekst: leesbaar(f) });
   for (const w of r.aanlevering?.waarschuwingen ?? []) (INFO.test(w) || /kleiner dan \d+ px/.test(w) ? uit.info : uit.aandacht).push({ bron: 'aanleveringscontrole', tekst: w.replace(/^teksten\.md: /, 'Teksten: ') });
   for (const f of r.manifest?.fouten ?? []) if (!/canonical/.test(f) || !(r.aanlevering?.fouten ?? []).some((x: string) => /canonical/.test(x))) uit.blokkerend.push({ bron: 'manifestschema', tekst: f });
   for (const f of r.feiten?.fouten ?? []) uit.blokkerend.push({ bron: 'feitencontrole', tekst: pad(f) });
@@ -226,7 +226,6 @@ export async function beoordeling(c: pg.PoolClient, projectId: string) {
   const vinger = await vingerafdruk(c, projectId);
   const kc = (await c.query(`SELECT id, volgnummer, klaar_op, duur_ms, rapport, vingerafdruk, generator_commit, aangevraagd_door FROM verwerking
     WHERE project_id = $1 AND soort = 'kwaliteitscontrole' ORDER BY volgnummer DESC LIMIT 1`, [projectId])).rows[0] ?? null;
-  const resultaat = deelIn(kc?.rapport ?? null);
   const besluiten = await leesBesluiten(c, projectId);
   const eisen = (await generatorModule('packages/aanlevering/index.mjs')) as { EIS: Rij; EIS_BROCHURE: Rij };
 
@@ -251,10 +250,20 @@ export async function beoordeling(c: pg.PoolClient, projectId: string) {
   // Openingsbeeld: gekozen, in gebruik en groot genoeg (norm van de generator; brochure-aanlevering = brochurenorm).
   const fotos = (o.bestanden as Rij[]).filter((b) => b.soort === 'foto' && !b.vervallen && !b.dubbel_van);
   const heroNorm = eisen.EIS_BROCHURE.heroBreedte as number;
-  const geschiktHero = fotos.filter((b) => b.breedte / b.hoogte >= 1.2 && b.breedte >= heroNorm);
+  // Kiesbaar: elke liggende foto vanaf HERO_MINIMUM. Onder de norm van de generator mag het (bewust), met een
+  // waarschuwing over de beeldkwaliteit ('beperkt'); de norm blijft zichtbaar als aanbevolen punt.
+  const omslag = (b: Rij) => b.herkomst === 'brochure' && /^fotos\/[^/]+\/01-/.test(b.originele_naam);
+  const geschiktHero: Rij[] = fotos.filter((b) => kiesbaarAlsOpeningsbeeld(b as { breedte: number; hoogte: number }))
+    .map((b) => ({ ...b, kwaliteit: b.breedte >= heroNorm ? 'goed' : 'beperkt' }));
   const hero = fotos.find((b) => b.id === p.openingsbeeld_id) ?? null;
-  // Voorstel van de import: de omslagfoto van de brochure (eerste foto), als die geschikt is.
-  const importVoorstel = geschiktHero.find((b) => b.herkomst === 'brochure' && /^fotos\/[^/]+\/01-/.test(b.originele_naam)) ?? null;
+  const heroKiesbaar = !!hero && geschiktHero.some((b) => b.id === hero.id);
+  // Automatische voorkeur: eerst de beeldkwaliteit (volgens de norm), dan de omslagfoto van de brochure,
+  // dan een buitenopname (beeldclassificatie; nooit 'omgeving'), dan de breedte en de brochurevolgorde.
+  const buiten = (b: Rij) => ['exterieur', 'buitenruimte'].includes(b.classificatie?.categorie) ? 1 : 0;
+  const importVoorstel = [...geschiktHero].filter((b) => b.classificatie?.categorie !== 'omgeving' || omslag(b))
+    .sort((a, b) => Number(b.kwaliteit === 'goed') - Number(a.kwaliteit === 'goed') || Number(omslag(b)) - Number(omslag(a))
+      || buiten(b) - buiten(a) || b.breedte - a.breedte || (a.pagina ?? 9999) - (b.pagina ?? 9999))[0] ?? null;
+  const resultaat = deelIn(kc?.rapport ?? null, heroKiesbaar);
 
   // Fotokwaliteit: zijn er originelen nodig, dan is een bewuste beslissing nodig om met brochurebeelden een eerste concept te maken.
   const fotoset = createHash('sha1').update(fotos.map((b) => b.sha256).sort().join()).digest('hex').slice(0, 12);
@@ -294,7 +303,9 @@ export async function beoordeling(c: pg.PoolClient, projectId: string) {
     punt(3, 'profiel', 'Presentatieprofiel gekozen', !!p.profiel, 'Kies het presentatieprofiel.'),
     punt(3, 'websiteadres', 'Definitief websiteadres vastgelegd', !!p.domein,
       `Het interne concept krijgt het tijdelijke adres ${p.slug}.invalid. Vóór publicatie is het definitieve domein verplicht.`, false),
-    punt(3, 'openingsbeeld', 'Openingsbeeld gekozen', !!hero && geschiktHero.some((b) => b.id === hero.id), geschiktHero.length ? 'Kies het openingsbeeld uit de geschikte foto\'s.' : `Geen foto is geschikt (liggend, ≥ ${heroNorm} px): lever een origineel aan.`),
+    punt(3, 'openingsbeeld', 'Openingsbeeld gekozen', heroKiesbaar, geschiktHero.length ? 'Kies het openingsbeeld uit de liggende foto\'s.' : `Geen foto is bruikbaar (liggend, ≥ ${HERO_MINIMUM} px): lever een origineel aan.`),
+    punt(3, 'openingsbeeld_kwaliteit', `Openingsbeeld voldoet aan de beeldnorm (≥ ${heroNorm} px)`, !heroKiesbaar || hero!.breedte >= heroNorm,
+      `Het gekozen openingsbeeld is ${hero?.breedte ?? 0} px breed: op grote schermen minder scherp. Vraag zo mogelijk het origineel op.`, false),
     punt(3, 'fotokwaliteit', 'Fotokwaliteit beoordeeld', fotoAkkoord, 'Originele foto\'s ontbreken; het concept gebruikt de brochurebeelden.', false),
     punt(3, 'kwaliteitscontrole', 'Kwaliteitscontrole uitgevoerd op de huidige stand, zonder blokkades', actueel && resultaat.blokkerend.length === 0,
       !kc ? 'Voer de kwaliteitscontrole uit.' : !actueel ? 'Er is iets gewijzigd: voer de kwaliteitscontrole opnieuw uit.' : `Los ${resultaat.blokkerend.length} blokkade(s) op en voer de controle opnieuw uit.`),
@@ -323,7 +334,7 @@ export async function beoordeling(c: pg.PoolClient, projectId: string) {
     meldingen: o.meldingen, fotokwaliteit: o.fotokwaliteit,
     beslissingen: {
       rechten: p.rechten, profiel: p.profiel, profiel_voorstel: o.import?.profiel ?? null, domein: p.domein, conceptadres: p.conceptadres,
-      openingsbeeld: hero, openingsbeeld_norm: heroNorm, openingsbeeld_kandidaten: geschiktHero, openingsbeeld_voorstel: importVoorstel?.id ?? null,
+      openingsbeeld: (hero ? { ...hero, kwaliteit: hero.breedte >= heroNorm ? 'goed' : 'beperkt' } : null) as Rij | null, openingsbeeld_norm: heroNorm, openingsbeeld_minimum: HERO_MINIMUM, openingsbeeld_kandidaten: geschiktHero, openingsbeeld_voorstel: importVoorstel?.id ?? null,
       fotokwaliteit: { nodig: !(o.fotokwaliteit.originelen_nodig === 0 && o.fotokwaliteit.losse_onder_norm === 0), akkoord: fotoAkkoord, besluit: fotoBesluit ?? null, fotoset },
     },
     vrijgave: { ...(p.vrijgave ?? {}), vrijgegeven, actueel: vrijgegeven && p.vrijgave?.vingerafdruk === vinger },
@@ -402,10 +413,10 @@ export async function beslis(c: pg.PoolClient, gebruiker: string, projectId: str
       await zet('domein = $2, conceptadres = false', [d]); await log('domein vastgelegd', { domein: d });
     }
   } else if (onderwerp === 'openingsbeeld') {
-    if (!st.beslissingen.openingsbeeld_kandidaten.some((x: Rij) => x.id === b.bestand_id)) return { fout: 'waarde' as const, melding: `Kies een liggende foto van minimaal ${st.beslissingen.openingsbeeld_norm} px` };
+    if (!st.beslissingen.openingsbeeld_kandidaten.some((x: Rij) => x.id === b.bestand_id)) return { fout: 'waarde' as const, melding: `Kies een liggende foto van minimaal ${HERO_MINIMUM} px breed` };
     await zet('openingsbeeld_id = $2', [b.bestand_id]);
     const f = st.beslissingen.openingsbeeld_kandidaten.find((x: Rij) => x.id === b.bestand_id)!;
-    await log('gekozen', { bestand: b.bestand_id, beeld: f.herkomst === 'brochure' ? `brochure p. ${f.pagina}` : 'losse foto', maat: `${f.breedte}×${f.hoogte}` });
+    await log('gekozen', { bestand: b.bestand_id, beeld: f.herkomst === 'brochure' ? `brochure p. ${f.pagina}` : 'losse foto', maat: `${f.breedte}×${f.hoogte}`, kwaliteit: f.kwaliteit });
   } else if (onderwerp === 'fotokwaliteit') {
     if (motivering.length < 3) return { fout: 'motivering' as const };
     await log('geaccepteerd voor eerste concept', { fotoset: st.beslissingen.fotokwaliteit.fotoset, originelen_nodig: st.fotokwaliteit.originelen_nodig, geschikt: st.fotokwaliteit.geschikt });

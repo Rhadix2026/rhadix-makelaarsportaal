@@ -13,14 +13,23 @@ import { overzicht } from './aanlevering.ts';
 import { legVast } from './besluiten.ts';
 import { beoordeling } from './controle.ts';
 import { config } from './config.ts';
+import { HERO_MINIMUM } from './fasen.ts';
 
 // ── Domeinnaam ──────────────────────────────────────────────────────────────
 
-/** "Denekamperstraat 23B" → "denekamperstraat23b.nl"; zonder bruikbaar adres: null. */
-export function domeinVoorstel(adres: string | null | undefined): string | null {
+const label = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+/**
+ * Voorstel uit het adres en de plaats: "Markt 27" + "Wolvega" → "markt27wolvega.nl". Straat en huisnummer
+ * alleen zijn vaak al bezet; met de plaats erbij is het voorstel herkenbaar en vaker vrij. Zonder bruikbaar
+ * adres: null. Te lang (> 63 tekens) → zonder plaats.
+ */
+export function domeinVoorstel(adres: string | null | undefined, plaats?: string | null): string | null {
   if (!adres) return null;
-  const label = adres.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
-  return label.length >= 2 && label.length <= 63 ? `${label}.nl` : null;
+  const a = label(adres), p = plaats ? label(plaats) : '';
+  if (a.length < 2) return null;
+  const l = a.length + p.length <= 63 ? a + p : a;
+  return l.length <= 63 ? `${l}.nl` : null;
 }
 
 const NL_DOMEIN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.nl$/;
@@ -75,14 +84,14 @@ export async function leesKeuzes(c: pg.PoolClient, projectId: string) {
   const perPagina = new Map<number, number>();
   for (const f of fotos) if (f.pagina != null) perPagina.set(f.pagina, (perPagina.get(f.pagina) ?? 0) + 1);
   const teller = new Map<number, number>();
-  const geschikt = new Set<string>((b?.beslissingen.openingsbeeld_kandidaten ?? []).map((x: Rij) => x.id));
+  const kwaliteit = new Map<string, string>((b?.beslissingen.openingsbeeld_kandidaten ?? []).map((x: Rij) => [x.id, x.kwaliteit]));
 
   const wens = laatste('domeinwens');
   const zon = laatste('zonschaduw');
   return {
     project: { id: p.id, naam: p.naam, adres: p.adres, postcode: p.postcode, plaats: p.plaats, woningtype: p.woningtype, status: p.status },
     domein: {
-      voorstel: domeinVoorstel(p.adres),
+      voorstel: domeinVoorstel(p.adres, p.plaats),
       wens: wens ? { domein: wens.waarde?.domein ?? null, uitkomst: wens.waarde?.uitkomst ?? null, op: wens.op } : null,
       definitief: p.domein ?? null,
     },
@@ -90,12 +99,15 @@ export async function leesKeuzes(c: pg.PoolClient, projectId: string) {
       gekozen: (b?.beslissingen.openingsbeeld?.id as string | undefined) ?? null,   // bestaande beoordeling (bron: project.openingsbeeld_id)
       voorstel: b?.beslissingen.openingsbeeld_voorstel ?? null,
       norm: b?.beslissingen.openingsbeeld_norm ?? null,
+      minimum: HERO_MINIMUM,
     },
     zonschaduw: zon ? { gewenst: !!zon.waarde?.gewenst, bestand_id: zon.waarde?.bestand_id ?? null, adres: zon.waarde?.adres ?? null, op: zon.op } : null,
     fotos: fotos.map((f) => {
       const n = f.pagina != null ? (teller.set(f.pagina, (teller.get(f.pagina) ?? 0) + 1), teller.get(f.pagina)!) : null;
       return { id: f.id as string, pagina: (f.pagina as number | null) ?? null, nummer: n, aantal_op_pagina: f.pagina != null ? perPagina.get(f.pagina)! : null,
-        herkomst: f.herkomst as string, breedte: f.breedte as number, hoogte: f.hoogte as number, geschikt_als_homepagefoto: geschikt.has(f.id) };
+        herkomst: f.herkomst as string, breedte: f.breedte as number, hoogte: f.hoogte as number, geschikt_als_homepagefoto: kwaliteit.has(f.id),
+        /** 'goed' = volgens de norm; 'beperkt' = kiesbaar met een waarschuwing; null = niet kiesbaar (staand of te klein). */
+        kwaliteit: (kwaliteit.get(f.id) as 'goed' | 'beperkt' | undefined) ?? null };
     }),
   };
 }

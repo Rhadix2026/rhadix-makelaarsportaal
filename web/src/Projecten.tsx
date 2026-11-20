@@ -152,7 +152,10 @@ export function Dashboard({ ik }: { ik: Ik }) {
                 {data.projecten.map((p) => (
                   // De hele rij opent het project; de link in de eerste kolom blijft het toetsenbordpad.
                   <tr key={p.id} className="klikbaar" onClick={(e) => { if (!(e.target as HTMLElement).closest('a')) location.hash = `#/projecten/${p.id}`; }}>
-                    <td><a href={`#/projecten/${p.id}`}>{p.naam}</a><div className="stat-sub">{[p.adres, p.plaats].filter(Boolean).join(', ') || p.slug}</div></td>
+                    {eenvoudig && p.adres
+                      // Makelaar: het woningadres als titel (direct herkenbaar); de projectnaam eronder.
+                      ? <td><a href={`#/projecten/${p.id}`}>{[p.adres, p.plaats].filter(Boolean).join(', ')}</a><div className="stat-sub">{p.naam}</div></td>
+                      : <td><a href={`#/projecten/${p.id}`}>{p.naam}</a><div className="stat-sub">{[p.adres, p.plaats].filter(Boolean).join(', ') || p.slug}</div></td>}
                     <td>{p.kantoor}</td>
                     <td><StatusBadge status={p.status} catalogus={catalogus} /></td>
                     <td>{p.profiel ?? '—'}</td>

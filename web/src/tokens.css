@@ -441,3 +441,14 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 .keuze-ja-nee label { display: flex; gap: 8px; align-items: center; font-size: 15px; cursor: pointer; }
 .keuze-foto { display: inline-flex; gap: 8px; align-items: center; }
 .keuze-foto img { width: 56px; height: 42px; object-fit: cover; border-radius: 3px; }
+
+/* ── Stap 3A.3: kwaliteitswaarschuwing, domeinstatus, concept aanmaken ── */
+.galerij-let-op { font-size: 11px; padding: 1px 6px; border-radius: 10px; background: var(--amber-licht); color: #92400e; }
+.domein-ongeldig { background: var(--rood-licht); color: #991b1b; }
+.domein-voorstel { background: var(--blauw-licht); color: var(--navy); }
+.domein-label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--tekst3); }
+.interne-naam { font-size: 14px; color: var(--tekst3); margin: -6px 0 14px; }
+.concept-stappen { list-style: none; padding: 0; margin: 0 0 14px; display: grid; gap: 6px; }
+.concept-stappen li { display: flex; gap: 8px; align-items: baseline; }
+.concept-stappen .vink-ok { color: #15803d; font-weight: 700; }
+.concept-stappen .vink-open { color: var(--tekst3); font-weight: 700; }

@@ -13,7 +13,7 @@ import { spawn } from 'node:child_process';
 import { cpSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { config } from './config.ts';
-import { VOOR_PUBLICATIE } from './fasen.ts';
+import { kiesbaarAlsOpeningsbeeld, nietBlokkerendVoorIntern } from './fasen.ts';
 import { generatorCommit, generatorVersie, sharp, valideerManifest } from './generator.ts';
 import { leesBouwstap, voortgangRegel, type Gebeurtenis } from './voortgang.ts';
 
@@ -71,7 +71,10 @@ async function concept(k: Concept) {
   const a = await controleerAanlevering(k.aanlevering);
   // De generator controleert ook wat pas vóór publicatie verplicht is (bevestigde publicatierechten). Voor het
   // interne, afgeschermde concept mag alleen die melding openstaan; elke andere fout blijft de generatie stoppen.
-  const fouten = (a.fouten as string[]).filter((f) => !VOOR_PUBLICATIE.test(f));
+  // Idem de beeldnorm van het openingsbeeld, als er bewust een kleinere liggende foto als hero is aangewezen.
+  const heroGekozen = ((a.gegevens?.fotos ?? []) as { hero?: boolean; w?: number; h?: number }[])
+    .some((f) => f.hero && !!f.w && !!f.h && kiesbaarAlsOpeningsbeeld({ breedte: f.w, hoogte: f.h }));
+  const fouten = (a.fouten as string[]).filter((f) => !nietBlokkerendVoorIntern(f, heroGekozen));
   if (fouten.length) throw new Error(`aanlevering onvolledig: ${fouten.join('; ')}`);
   const { manifest, kopie } = naarManifest(a.gegevens, generatorVersie(), null);
   // De versie die bij het aanmaken van het project is vastgezet.
