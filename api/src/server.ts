@@ -154,7 +154,11 @@ export function bouwApp() {
     let melding: string | null = null;
     const token = ssoActief() ? leesCookie(req.headers.cookie, config.sso.cookie) : undefined;
     if (token) { const r = await meldAanViaRhadix(token); if (!r.ok && r.fout !== 'ongeldig') melding = SSO_MELDING[r.fout]; }
-    return { rhadix: ssoActief() ? config.sso.platform : null, lokaal: lokaleLoginToegestaan(req), melding };
+    // `inloggen`: rechtstreekse ingang op het platform (?app=<slug>); na het inloggen stuurt Rhadix
+    // direct terug naar dit portaal, zonder applicatieoverzicht. De slug is de vaste app-slug.
+    return { rhadix: ssoActief() ? config.sso.platform : null,
+      inloggen: ssoActief() ? `${config.sso.platform}/?app=${encodeURIComponent(config.sso.app)}` : null,
+      lokaal: lokaleLoginToegestaan(req), melding };
   });
 
   app.post<{ Body: { email?: string; wachtwoord?: string } }>('/api/inloggen', async (req, reply) => {
@@ -177,7 +181,8 @@ export function bouwApp() {
   });
 
   app.get('/api/ik', async (req) => ({ ...(await ik(req.gebruiker)), huisstijl: req.huisstijl,
-    uitloggen: ssoActief() ? `${config.sso.platform}/api/auth/logout` : null }));
+    // Centraal uitloggen; daarna landt de gebruiker weer op de ingang van dit portaal.
+    uitloggen: ssoActief() ? `${config.sso.platform}/api/auth/logout?app=${encodeURIComponent(config.sso.app)}` : null }));
 
   // ── Koppeling kantoor ↔ Rhadix-organisatie (alleen platformbeheer; op ID, nooit op naam) ──
   app.get('/api/rhadix-organisaties', { preHandler: alleenPlatform }, async (req) => alsGebruiker(req.gebruiker, async (c) =>

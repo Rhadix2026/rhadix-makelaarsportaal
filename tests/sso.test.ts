@@ -42,7 +42,7 @@ test('makelaar via Rhadix: aangemaakt zonder wachtwoord, in het kantoor van de e
   assert.equal(ik.platformbeheer, false);
   assert.deepEqual(ik.kantoren.map((k: { naam: string; rol: string }) => [k.naam, k.rol]), [['Kantoor A', 'makelaar']]);
   assert.deepEqual(ik.huisstijl, { primair: '#123456', accent: '#abcdef', woordmerk: 'Kantoor A', logo: 'https://platform.rhadix.invalid/api/branding/x/logo' });
-  assert.equal(ik.uitloggen, 'https://platform.rhadix.invalid/api/auth/logout');
+  assert.equal(ik.uitloggen, 'https://platform.rhadix.invalid/api/auth/logout?app=rhadix-makelaarsportaal');
   const g = (await pool.query("SELECT wachtwoord_hash, extern_bron, extern_id, rhadix_tenant_id FROM gebruiker WHERE email = 'makelaar.a@rhadix.test'")).rows[0];
   assert.deepEqual(g, { wachtwoord_hash: null, extern_bron: 'rhadix', extern_id: sub, rhadix_tenant_id: ORG_A });
 });
@@ -204,6 +204,6 @@ test('noodtoegang (STUDIO_LOKALE_LOGIN=tunnel): eigen login alleen via 127.0.0.1
     assert.equal((await app.inject({ method: 'GET', url: '/api/ik', headers: { cookie, host: 'makelaarsportaal-test.rhadix.nl' } })).statusCode, 401);
     assert.equal((await app.inject({ method: 'GET', url: '/api/ik', headers: { cookie, host: '127.0.0.1:8581' } })).statusCode, 200);
     const opties = (await app.inject({ method: 'GET', url: '/api/inlogopties', headers: { host: 'makelaarsportaal-test.rhadix.nl' } })).json();
-    assert.deepEqual(opties, { rhadix: 'https://platform.rhadix.invalid', lokaal: false, melding: null });
+    assert.deepEqual(opties, { rhadix: 'https://platform.rhadix.invalid', inloggen: 'https://platform.rhadix.invalid/?app=rhadix-makelaarsportaal', lokaal: false, melding: null });
   } finally { config.lokaleLogin = vorig; }
 });

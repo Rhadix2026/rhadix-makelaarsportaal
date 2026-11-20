@@ -32,8 +32,8 @@ export function Inloggen({ ingelogd }: { ingelogd: (ik: Ik) => void }) {
         {fout && <p className="melding melding-fout" role="alert">{fout}</p>}
         {opties.rhadix && (
           <>
-            <a className="knop knop-primair" href={`${opties.rhadix}/`} style={{ justifyContent: 'center', textDecoration: 'none' }}>Inloggen via Rhadix</a>
-            <p className="stat-sub" style={{ margin: 0 }}>Na het inloggen kiest u in het Rhadix-portaal voor Makelaarsportaal, of opent u deze pagina opnieuw.</p>
+            <a className="knop knop-primair" href={opties.inloggen ?? `${opties.rhadix}/`} style={{ justifyContent: 'center', textDecoration: 'none' }}>Inloggen via Rhadix</a>
+            <p className="stat-sub" style={{ margin: 0 }}>Na het inloggen komt u direct terug in het Makelaarsportaal.</p>
           </>
         )}
         {opties.lokaal && (

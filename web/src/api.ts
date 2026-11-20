@@ -26,7 +26,7 @@ export type Ik = {
   uitloggen?: string | null;
 };
 
-export type InlogOpties = { rhadix: string | null; lokaal: boolean; melding: string | null };
+export type InlogOpties = { rhadix: string | null; inloggen?: string | null; lokaal: boolean; melding: string | null };
 
 export type RhadixOrganisatie = { tenant_id: string; naam: string; laatst_gezien: string; kantoor_id: string | null; kantoor: string | null };
 
