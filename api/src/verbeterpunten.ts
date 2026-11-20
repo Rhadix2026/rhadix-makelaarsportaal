@@ -24,11 +24,12 @@ export async function puntenVanProject(c: pg.PoolClient, projectId: string) {
 export async function puntenVanConcept(c: pg.PoolClient, conceptId: string) {
   return (await c.query(`SELECT ${VELDEN} ${VAN} WHERE v.concept_id = $1 ORDER BY v.ingediend_op, v.id`, [conceptId])).rows;
 }
-export async function puntenOpen(c: pg.PoolClient) {
+/** Overzicht voor platformbeheer: standaard de werkvoorraad (open), met `alle` ook verwerkte en geannuleerde punten. */
+export async function puntenOpen(c: pg.PoolClient, alle = false) {
   return (await c.query(`SELECT ${VELDEN}, p.naam AS project_naam, p.adres, p.plaats, kt.merknaam AS kantoor,
       (SELECT array_agg(x.versie ORDER BY x.versie) FROM concept x WHERE x.project_id = v.project_id) AS versies ${VAN}
     JOIN project p ON p.id = v.project_id JOIN kantoor kt ON kt.id = v.kantoor_id
-    WHERE v.status IN ('OPEN', 'IN_BEHANDELING') ORDER BY v.ingediend_op, v.id`)).rows;
+    WHERE ${alle ? 'true' : `v.status IN ('OPEN', 'IN_BEHANDELING')`} ORDER BY (v.status IN ('OPEN', 'IN_BEHANDELING')) DESC, v.ingediend_op, v.id`)).rows;
 }
 /** Open punten (OPEN of IN_BEHANDELING) op een versie: die blokkeren de definitieve acceptatie. */
 export async function openOpConcept(c: pg.PoolClient, conceptId: string) {

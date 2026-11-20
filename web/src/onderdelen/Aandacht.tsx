@@ -12,7 +12,7 @@ export type AandachtItem = {
   heeft_reactie: boolean; verwerkt_in_versie: number | null; adres: string | null; plaats: string | null; project_naam: string; kantoor?: string;
 };
 export type AandachtBlok = { soort: 'verbeterpunten'; titel: string; rol: string; gezien_op: string | null; nieuw: number; open: number;
-  afgehandeld: number; afgehandeld_nieuw: number; meer: boolean; items: AandachtItem[] };
+  afgehandeld: number; afgehandeld_nieuw: number; meer: boolean; items: AandachtItem[]; afgehandeld_items?: AandachtItem[] };
 export type Aandacht = { rol: 'platformbeheer' | 'kantoorbeheerder' | 'makelaar' | null; soorten: AandachtBlok[] };
 
 const veilig = { lees: (k: string) => { try { return localStorage.getItem(k); } catch { return null; } },
@@ -76,7 +76,7 @@ export function AandachtPaneel() {
   if (!a?.rol || !a.soorten.length) return null;
   const b = a.soorten[0];
   // Kantoor en makelaar: alleen tonen als er iets is (open of nieuw); platformbeheer altijd (werkvoorraad).
-  if (a.rol !== 'platformbeheer' && !b.items.length && !b.nieuw) return null;
+  if (a.rol !== 'platformbeheer' && !b.items.length && !b.nieuw && !b.afgehandeld_items?.length) return null;
   const wissel = () => { const n = !dicht; setDicht(n); veilig.schrijf('mp_aandacht_ingeklapt', n ? '1' : '0'); };
   const titel = a.rol === 'makelaar' ? 'Mijn verbeterpunten' : a.rol === 'kantoorbeheerder' ? 'Verbeterpunten van uw kantoor' : 'Aandacht';
   return (
@@ -89,7 +89,7 @@ export function AandachtPaneel() {
       {!dicht && (
         <div className="aandacht-inhoud">
           <div className="aandacht-blok-kop">{b.titel}
-            <span className="bron">{a.rol === 'platformbeheer' ? ` · ${b.open} open · ${b.nieuw} nieuw` : ` · ${b.open} open · ${b.nieuw} nieuw · ${b.afgehandeld_nieuw} afgehandeld sinds uw laatste inzage`}</span></div>
+            <span className="bron">{a.rol === 'platformbeheer' ? ` · ${b.open} open, waarvan ${b.nieuw} nieuw` : ` · ${b.open} open`}</span></div>
           {b.items.length ? (
             <ul className="aandacht-lijst">
               {b.items.map((i) => {
@@ -106,6 +106,17 @@ export function AandachtPaneel() {
               })}
             </ul>
           ) : <p className="stat-sub" style={{ margin: 0 }}>Geen openstaande verbeterpunten.</p>}
+          {/* Kantoor en makelaar: afhandelingen door Rhadix sinds de laatste inzage, apart van de werkvoorraad. */}
+          {!!b.afgehandeld_items?.length && <>
+            <div className="aandacht-blok-kop">Afgehandeld door Rhadix <span className="bron">· sinds uw laatste inzage</span></div>
+            <ul className="aandacht-lijst">{b.afgehandeld_items.map((i) => {
+              const [toon, label] = STATUS_PUNT[i.status];
+              return (<li key={i.id}><a href={puntLink(i)}>
+                <span className="aandacht-regel1"><span className="aandacht-plek">{plekVan(i)}</span></span>
+                <span className="aandacht-regel2">v{i.versie} · <Badge toon={toon}>{i.status === 'KLAAR' && i.verwerkt_in_versie ? `${label} in v${i.verwerkt_in_versie}` : label}</Badge></span>
+                <span className="aandacht-tekst">{i.tekst.length > 60 ? `${i.tekst.slice(0, 60)}…` : i.tekst}</span></a></li>);
+            })}</ul>
+          </>}
           <a className="aandacht-alle" href="#/verbeterpunten">{b.meer ? 'Meer verbeterpunten' : 'Alle verbeterpunten'} →</a>
         </div>
       )}

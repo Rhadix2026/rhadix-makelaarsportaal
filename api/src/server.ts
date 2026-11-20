@@ -598,7 +598,7 @@ export function bouwApp() {
     return reply.code(201).send(r);
   });
 
-  app.get('/api/verbeterpunten', { preHandler: alleenPlatform }, async (req) => alsGebruiker(req.gebruiker, puntenOpen));
+  app.get<{ Querystring: { status?: string } }>('/api/verbeterpunten', { preHandler: alleenPlatform }, async (req) => alsGebruiker(req.gebruiker, (c) => puntenOpen(c, req.query.status === 'alle')));
 
   app.patch<{ Params: { id: string }; Body: { status?: string; reactie?: string; verwerkt_in_versie?: number } }>('/api/verbeterpunten/:id', { preHandler: alleenPlatform }, async (req, reply) => {
     if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Verbeterpunt niet gevonden' });

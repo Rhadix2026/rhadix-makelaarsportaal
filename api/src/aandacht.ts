@@ -6,12 +6,15 @@
 // concepten klaar voor beoordeling) als extra blok kunnen worden toegevoegd zonder het scherm te wijzigen.
 //
 // Per rol (bepaald op de server, niet in de interface):
-//   platformbeheer    alle kantoren; nieuw = ingediend na de laatste inzage
+//   platformbeheer    alle kantoren; het paneel is de WERKVOORRAAD: alleen OPEN/IN_BEHANDELING;
+//                     nieuw = een open punt dat na de laatste inzage is ingediend (alleen een markering)
 //   kantoorbeheerder  punten van het eigen kantoor (waar hij kantoorbeheerder is) en zijn eigen punten
 //   makelaar          alleen zijn eigen ingediende punten
 //   (kantoor)         nieuw = een reactie of afhandeling door Rhadix na de laatste inzage
 // Drie categorieën: nieuw sinds de laatste inzage, open (OPEN/IN_BEHANDELING), afgehandeld (KLAAR/GEANNULEERD).
-// 'Gezien' verandert nooit de status van een punt.
+// De regels in het paneel zijn voor elke rol uitsluitend open punten; 'gezien' verwijdert alleen de markering
+// 'nieuw' en verandert nooit de werkvoorraad, de aantallen open of de status van een punt. Voor kantoor en
+// makelaar komen nieuwe afhandelingen door Rhadix in een apart blok (melding), los van de werkvoorraad.
 import type pg from 'pg';
 
 export const ONDERWERPEN = ['verbeterpunten'] as const;
@@ -31,7 +34,7 @@ const SCOPE: Record<Rol, string> = {
 };
 // Wat telt als nieuw ten opzichte van het tijdstip van de laatste inzage ($1, NULL = nog nooit bekeken).
 const NIEUW: Record<Rol, string> = {
-  platformbeheer: '($1::timestamptz IS NULL OR v.ingediend_op > $1)',
+  platformbeheer: `(v.status IN ('OPEN', 'IN_BEHANDELING') AND ($1::timestamptz IS NULL OR v.ingediend_op > $1))`,
   kantoorbeheerder: `((v.reactie IS NOT NULL OR v.status <> 'OPEN') AND ($1::timestamptz IS NULL OR v.bijgewerkt_op > $1))`,
   makelaar: `((v.reactie IS NOT NULL OR v.status <> 'OPEN') AND ($1::timestamptz IS NULL OR v.bijgewerkt_op > $1))`,
 };
@@ -41,22 +44,30 @@ async function gezienOp(c: pg.PoolClient, onderwerp: string): Promise<string | n
   return (await c.query('SELECT gezien_op FROM gezien WHERE gebruiker_id = app.huidige_gebruiker() AND onderwerp = $1', [onderwerp])).rows[0]?.gezien_op ?? null;
 }
 
-/** Het blok 'verbeterpunten': aantallen per categorie en de regels (maximaal `max`), nieuw eerst, dan het oudste open punt. */
+/**
+ * Het blok 'verbeterpunten': aantallen per categorie, de werkvoorraad (alleen open punten, nieuw gemarkeerd en
+ * eerst, dan het oudste) en voor kantoor/makelaar apart de afhandelingen door Rhadix sinds de laatste inzage.
+ */
 export async function blokVerbeterpunten(c: pg.PoolClient, rol: Rol, max = 8) {
   const g = await gezienOp(c, 'verbeterpunten');
   const telling = (await c.query(`SELECT count(*) FILTER (WHERE ${NIEUW[rol]})::int AS nieuw, count(*) FILTER (WHERE ${OPEN})::int AS open,
       count(*) FILTER (WHERE NOT (${OPEN}))::int AS afgehandeld,
       count(*) FILTER (WHERE NOT (${OPEN}) AND ($1::timestamptz IS NULL OR v.afgehandeld_op > $1))::int AS afgehandeld_nieuw
     FROM verbeterpunt v WHERE ${SCOPE[rol]}`, [g])).rows[0];
-  // Platformbeheer: open punten (de werkvoorraad). Kantoor en makelaar: nieuwe reacties/afhandelingen en hun open punten.
-  const items = (await c.query(`SELECT v.id, v.project_id, v.concept_id, k.versie, v.onderdeel, left(v.tekst, 80) AS tekst, v.status,
+  const kolommen = `v.id, v.project_id, v.concept_id, k.versie, v.onderdeel, left(v.tekst, 80) AS tekst, v.status,
       v.ingediend_op, v.bijgewerkt_op, v.afgehandeld_op, kv.versie AS verwerkt_in_versie, (v.reactie IS NOT NULL) AS heeft_reactie,
-      ${NIEUW[rol]} AS nieuw, p.adres, p.plaats, p.naam AS project_naam${rol === 'platformbeheer' ? ', kt.merknaam AS kantoor' : ''}
-    FROM verbeterpunt v JOIN concept k ON k.id = v.concept_id LEFT JOIN concept kv ON kv.id = v.verwerkt_in
-      JOIN project p ON p.id = v.project_id JOIN kantoor kt ON kt.id = v.kantoor_id
-    WHERE ${SCOPE[rol]} AND (${OPEN} OR ${NIEUW[rol]})
+      ${NIEUW[rol]} AS nieuw, p.adres, p.plaats, p.naam AS project_naam${rol === 'platformbeheer' ? ', kt.merknaam AS kantoor' : ''}`;
+  const van = `FROM verbeterpunt v JOIN concept k ON k.id = v.concept_id LEFT JOIN concept kv ON kv.id = v.verwerkt_in
+      JOIN project p ON p.id = v.project_id JOIN kantoor kt ON kt.id = v.kantoor_id`;
+  // Werkvoorraad: uitsluitend OPEN/IN_BEHANDELING, voor elke rol. Nieuw gemarkeerd en eerst, dan het oudste.
+  const items = (await c.query(`SELECT ${kolommen} ${van}
+    WHERE ${SCOPE[rol]} AND ${OPEN}
     ORDER BY (${NIEUW[rol]}) DESC, v.ingediend_op, v.id LIMIT $2`, [g, max + 1])).rows;
-  return { soort: 'verbeterpunten' as const, titel: 'Verbeterpunten', rol, gezien_op: g, ...telling, meer: items.length > max, items: items.slice(0, max) };
+  // Kantoor en makelaar: afhandelingen door Rhadix sinds de laatste inzage, als aparte melding (geen werkvoorraad).
+  const afgehandeld = rol === 'platformbeheer' ? [] : (await c.query(`SELECT ${kolommen} ${van}
+    WHERE ${SCOPE[rol]} AND NOT (${OPEN}) AND ($1::timestamptz IS NULL OR v.afgehandeld_op > $1)
+    ORDER BY v.afgehandeld_op DESC, v.id LIMIT $2`, [g, max])).rows;
+  return { soort: 'verbeterpunten' as const, titel: 'Verbeterpunten', rol, gezien_op: g, ...telling, meer: items.length > max, items: items.slice(0, max), afgehandeld_items: afgehandeld };
 }
 
 /** Alle blokken voor de aanvrager (nu alleen verbeterpunten). */
