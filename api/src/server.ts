@@ -15,6 +15,7 @@ import { meldAanViaRhadix, SSO_MELDING, ssoActief, wisSsoCache, type Huisstijl, 
 import { isThema, themaVoor, type Thema } from './themas.ts';
 import { aanvraagBijConcept, metInternePlaatshouder } from './zonschaduw.ts';
 import { toegangsoverzicht } from './toegang.ts';
+import { behandel, dienIn, puntenOpen, puntenVanProject } from './verbeterpunten.ts';
 import { controleerDomein, geldigNlDomein, legDomeinwens, legZonschaduw, leesKeuzes } from './keuzes.ts';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { leesKantoor, lijstKantoren, maakKantoor, valideerKantoor, wijzigKantoor } from './kantoren.ts';
@@ -555,8 +556,36 @@ export function bouwApp() {
   app.put<{ Params: { id: string }; Body: { besluit?: string; motivering?: string; verbeterpunten?: unknown } }>('/api/concepten/:id/beoordeling', { preHandler: vereist('kantoorbeheer', 'concept') }, async (req, reply) => {
     if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Concept niet gevonden' });
     const r = await alsGebruiker(req.gebruiker, (c) => beoordeelConcept(c, req.gebruiker, req.params.id, req.body ?? {}));
-    if ('fout' in r) return reply.code(r.fout === 'onbekend' ? 404 : 400).send({ fout: ({ onbekend: 'Concept niet gevonden', punten: 'Leg minstens één verbeterpunt vast', besluit: 'Kies accepteren of verbeterpunten' } as Record<string, string>)[r.fout as string] });
+    if ('fout' in r && r.fout === 'open')
+      return reply.code(409).send({ fout: 'Deze conceptversie kan nog niet worden geaccepteerd: er staan nog verbeterpunten open of in behandeling', open: r.open });
+    if ('fout' in r) return reply.code(r.fout === 'onbekend' ? 404 : 400).send({ fout: ({ onbekend: 'Concept niet gevonden', punten: 'Leg minstens één verbeterpunt vast', teveel: 'Maximaal 20 verbeterpunten per keer', besluit: 'Kies accepteren of verbeterpunten' } as Record<string, string>)[r.fout as string] });
     return r.concept;
+  });
+
+  // ── Verbeterpunten (migratie 015): indienen door iedereen in het kantoor, behandelen door platformbeheer ──
+  app.get<{ Params: { id: string } }>('/api/projecten/:id/verbeterpunten', async (req, reply) => {
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Woningproject niet gevonden' });
+    const r = await alsGebruiker(req.gebruiker, async (c) => (await leesProject(c, req.params.id)) ? puntenVanProject(c, req.params.id) : null);
+    return r ?? reply.code(404).send({ fout: 'Woningproject niet gevonden' });
+  });
+
+  app.post<{ Params: { id: string }; Body: { punten?: unknown } }>('/api/concepten/:id/verbeterpunten', { preHandler: vereist('produceren', 'concept') }, async (req, reply) => {
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Concept niet gevonden' });
+    const r = await alsGebruiker(req.gebruiker, (c) => dienIn(c, req.gebruiker, req.params.id, req.body?.punten));
+    if ('fout' in r) return reply.code(r.fout === 'onbekend' ? 404 : 400).send({ fout: ({ onbekend: 'Concept niet gevonden', punten: 'Vul minstens één verbeterpunt in (minimaal 3 tekens)', teveel: 'Maximaal 20 verbeterpunten per keer' } as Record<string, string>)[r.fout as string] });
+    return reply.code(201).send(r);
+  });
+
+  app.get('/api/verbeterpunten', { preHandler: alleenPlatform }, async (req) => alsGebruiker(req.gebruiker, puntenOpen));
+
+  app.patch<{ Params: { id: string }; Body: { status?: string; reactie?: string; verwerkt_in_versie?: number } }>('/api/verbeterpunten/:id', { preHandler: alleenPlatform }, async (req, reply) => {
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Verbeterpunt niet gevonden' });
+    const r = await alsGebruiker(req.gebruiker, (c) => behandel(c, req.gebruiker, req.params.id, req.body ?? {}));
+    if ('fout' in r) return reply.code(r.fout === 'onbekend' ? 404 : r.fout === 'definitief' ? 409 : 400).send({ fout: ({
+      onbekend: 'Verbeterpunt niet gevonden', definitief: 'Dit verbeterpunt is al afgehandeld', status: 'Onbekende status', leeg: 'Geef een status of een reactie',
+      toelichting: 'Licht toe wat er is aangepast (minimaal 3 tekens)', versie: 'Kies de latere conceptversie waarin het punt is verwerkt',
+      motivering: 'Geef een motivering voor het annuleren (minimaal 3 tekens)' } as Record<string, string>)[r.fout as string] });
+    return r.punt;
   });
 
   // Lokale preview: de gegenereerde site, in een afgeschermde omgeving (sandbox, geen cookies, geen referrer, niet indexeren).

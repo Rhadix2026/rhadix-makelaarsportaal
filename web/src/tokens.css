@@ -465,3 +465,29 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
   .nav-links::-webkit-scrollbar { display: none; }
   .nav-link { white-space: nowrap; }
 }
+
+/* ── Verbeterpunten (migratie 015) ── */
+.bekijken-raster { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 1100px) { .bekijken-raster { grid-template-columns: minmax(0, 1fr); } }
+.bekijken-paneel { display: grid; gap: 0; min-width: 0; }
+.bekijken-preview { min-width: 0; }
+.bekijken-preview .apparaten { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.punten-indienen { display: grid; gap: 10px; }
+.punt-regel { display: grid; grid-template-columns: minmax(110px, 140px) minmax(0, 1fr); gap: 8px; align-items: start; }
+.punt-regel textarea { width: 100%; font: inherit; padding: 8px 10px; border: 1px solid var(--rand); border-radius: var(--radius); resize: vertical; }
+.punt-regel select { padding: 8px; border: 1px solid var(--rand); border-radius: var(--radius); font: inherit; }
+.punt-regel .tekstknop { grid-column: 2; justify-self: start; }
+@media (max-width: 520px) { .punt-regel { grid-template-columns: minmax(0, 1fr); } .punt-regel .tekstknop { grid-column: 1; } }
+.punten { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.punt { border: 1px solid var(--rand); border-radius: var(--radius); padding: 10px 12px; background: var(--vlak); min-width: 0; }
+.punt-klaar, .punt-geannuleerd { opacity: .85; }
+.punt-kop { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.punt-onderdeel { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--tekst3); font-weight: 600; }
+.punt-project { font-size: 13px; overflow-wrap: anywhere; }
+.punt-tekst { margin: 6px 0 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.punt-reactie { margin: 6px 0 0; padding: 8px 10px; background: var(--achtergrond); border-radius: var(--radius); font-size: 14px; overflow-wrap: anywhere; }
+.punt-behandelen { margin-top: 8px; }
+.punt-formulier { display: grid; gap: 8px; }
+.punt-formulier textarea { width: 100%; font: inherit; padding: 8px 10px; border: 1px solid var(--rand); border-radius: var(--radius); }
+.punten-versie + .punten-versie { margin-top: 14px; }
+.nog-open { margin: 8px 0 12px; padding-left: 1.1em; display: grid; gap: 6px; overflow-wrap: anywhere; }

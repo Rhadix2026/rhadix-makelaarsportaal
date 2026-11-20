@@ -146,7 +146,7 @@ export type Beoordeling = {
 export type ConceptKort = {
   id: string; versie: number; status: 'te_beoordelen' | 'geaccepteerd' | 'verbeterpunten'; ontwerpsysteem: string; profiel: string; generator_commit: string;
   aangemaakt_op: string; aangemaakt_door: string | null; beoordeeld_op: string | null; beoordeeld_door: string | null; motivering: string | null;
-  verbeterpunten: { onderdeel: string; tekst: string; op: string }[]; metingen: Metingen; voorbeeld_token: string; kwaliteit_kort: { blokkerend: number; waarschuwingen: number };
+  verbeterpunten: { id?: string; onderdeel: string; tekst: string; op?: string; ingediend_op?: string; status?: 'OPEN' | 'IN_BEHANDELING' | 'KLAAR' | 'GEANNULEERD' }[]; open_verbeterpunten?: number; metingen: Metingen; voorbeeld_token: string; kwaliteit_kort: { blokkerend: number; waarschuwingen: number };
 };
 export type ActieveTijd = { ms: number; grens_ms: number; sessies: number; pauzes: number; gebruikers: number; interacties: number; handelingen: number;
   registratie_vanaf: string | null; betrouwbaar: boolean; toelichting: string };

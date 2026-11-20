@@ -12,6 +12,8 @@ import { BeoordelingScherm } from './Beoordeling.tsx';
 import { ConceptScherm } from './Concepten.tsx';
 import { eenvoudigeAanlevering, magGebruikersInzien, magProjectenAanmaken } from './onderdelen/rechten.ts';
 import { GebruikersScherm } from './Gebruikers.tsx';
+import { ConceptBekijken } from './ConceptBekijken.tsx';
+import { VerbeterpuntenOverzicht } from './VerbeterpuntenOverzicht.tsx';
 import { AangeleverdScherm, AanleverFormulier } from './Aanleveren.tsx';
 import { merkUitUrl, zetThema } from './themas.ts';
 
@@ -29,10 +31,14 @@ function Scherm({ hash, ik }: { hash: string; ik: Ik }) {
   let m;
   // Gebruikers en rollen (alleen lezen): platformbeheer en kantoorbeheerder; anders een melding.
   if (hash === '#/gebruikers') return magGebruikersInzien(ik) ? <GebruikersScherm /> : <p className="melding melding-fout">Alleen voor de kantoorbeheerder of platformbeheer.</p>;
+  if (hash === '#/verbeterpunten') return ik.platformbeheer ? <VerbeterpuntenOverzicht /> : <p className="melding melding-fout">Alleen voor platformbeheer.</p>;
+  // Concept bekijken met verbeterpunten: voor iedereen; de makelaar komt hier ook via de oude conceptlink.
+  if ((m = hash.match(/^#\/projecten\/([0-9a-f-]{36})\/bekijken(?:\/v(\d+))?$/))) return <ConceptBekijken key={hash} id={m[1]} ik={ik} versie={m[2] ? Number(m[2]) : undefined} />;
   // Vereenvoudigde aanlevering (stap 3A.1): eenvoudig formulier, geen kantorenbeheer in de interface.
   if (eenvoudigeAanlevering(ik)) {
     if (hash === '#/aanleveren' || hash === '#/projecten/nieuw') return <AanleverFormulier ik={ik} />;
     if (hash.startsWith('#/kantoren')) return <Dashboard ik={ik} />;
+    if ((m = hash.match(/^#\/projecten\/([0-9a-f-]{36})\/concept(?:\/v(\d+))?$/))) return <ConceptBekijken key={hash} id={m[1]} ik={ik} versie={m[2] ? Number(m[2]) : undefined} />;
     // Projecten openen op de woningpagina met de keuzes, niet in de technische beheerschermen.
     if ((m = hash.match(/^#\/projecten\/([0-9a-f-]{36})(?:\/(?:aanlevering|beoordeling|bewerken))?$/))) return <AangeleverdScherm id={m[1]} />;
   }
@@ -92,6 +98,7 @@ function App() {
           <a className="nav-link" href="#/projecten" aria-current={actief('#/projecten')}>Woningprojecten</a>
           {!eenvoudigeAanlevering(ik) && <a className="nav-link" href="#/kantoren" aria-current={actief('#/kantoren')}>Kantoren</a>}
           {magGebruikersInzien(ik) && <a className="nav-link" href="#/gebruikers" aria-current={actief('#/gebruikers')}>Gebruikers<span className="nav-lang"> en rollen</span></a>}
+          {ik.platformbeheer && <a className="nav-link" href="#/verbeterpunten" aria-current={actief('#/verbeterpunten')}>Verbeterpunten</a>}
           {ik.platformbeheer && <a className="nav-link" href="#/systeem" aria-current={actief('#/systeem')}>Systeem</a>}
         </>}
         rechts={<>

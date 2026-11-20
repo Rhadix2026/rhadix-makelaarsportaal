@@ -10,6 +10,7 @@ import type pg from 'pg';
 import { audit } from './db.ts';
 import { legVast } from './besluiten.ts';
 import { beoordeling, exporteer, uitgangspunten, vingerafdruk } from './controle.ts';
+import { dienIn, openOpConcept, puntenVanConcept } from './verbeterpunten.ts';
 import { opslagPad } from './opslag.ts';
 import { config } from './config.ts';
 import { actief } from './tijd.ts';
@@ -123,8 +124,12 @@ async function meet(c: pg.PoolClient, projectId: string, duur: number, r: Rij) {
 }
 
 export async function lijstConcepten(c: pg.PoolClient, projectId: string) {
-  return (await c.query(`SELECT k.id, k.versie, k.status, k.ontwerpsysteem, k.profiel, k.generator_commit, k.aangemaakt_op, k.beoordeeld_op, k.motivering, k.verbeterpunten,
+  return (await c.query(`SELECT k.id, k.versie, k.status, k.ontwerpsysteem, k.profiel, k.generator_commit, k.aangemaakt_op, k.beoordeeld_op, k.motivering,
       k.metingen, k.invoer_vingerafdruk, k.build_vingerafdruk, k.voorbeeld_token, g.naam AS aangemaakt_door, b.naam AS beoordeeld_door,
+      -- Verbeterpunten uit de actieve registratie (tabel verbeterpunt; concept.verbeterpunten is een bevroren archief).
+      (SELECT coalesce(jsonb_agg(jsonb_build_object('id', v.id, 'onderdeel', v.onderdeel, 'tekst', v.tekst, 'op', v.ingediend_op, 'status', v.status)
+         ORDER BY v.ingediend_op, v.id), '[]') FROM verbeterpunt v WHERE v.concept_id = k.id) AS verbeterpunten,
+      (SELECT count(*)::int FROM verbeterpunt v WHERE v.concept_id = k.id AND v.status IN ('OPEN', 'IN_BEHANDELING')) AS open_verbeterpunten,
       jsonb_build_object('blokkerend', jsonb_array_length(coalesce(k.kwaliteit->'blokkerend', '[]')), 'waarschuwingen', jsonb_array_length(coalesce(k.kwaliteit->'waarschuwingen', '[]'))) AS kwaliteit_kort
     FROM concept k LEFT JOIN gebruiker g ON g.id = k.aangemaakt_door LEFT JOIN gebruiker b ON b.id = k.beoordeeld_door
     WHERE k.project_id = $1 ORDER BY k.versie DESC`, [projectId])).rows;
@@ -137,7 +142,11 @@ export async function leesConcept(c: pg.PoolClient, id: string) {
   // Alleen presentatie: de opgeslagen kwaliteit en metingen blijven ongewijzigd. Voor versies van
   // vóór de tijdregistratie wordt de actieve tijd achteraf afgeleid en als zodanig gemarkeerd.
   const achteraf = k.metingen?.versie === 2 ? null : { ...(await actief(c, k.project_id, new Date(k.aangemaakt_op))), afgeleid: 'achteraf berekend bij het bekijken, niet opgeslagen bij de versie' };
-  return { ...k, indeling: deelConceptIn(k.kwaliteit), tijd_achteraf: achteraf };
+  // verbeterpunten: uit de actieve registratie (zelfde vorm als vroeger, aangevuld met status en afhandeling).
+  const punten = await puntenVanConcept(c, id);
+  const { verbeterpunten: _archief, ...rest } = k; void _archief;
+  return { ...rest, verbeterpunten: punten, open_verbeterpunten: punten.filter((p) => p.status === 'OPEN' || p.status === 'IN_BEHANDELING').length,
+    indeling: deelConceptIn(k.kwaliteit), tijd_achteraf: achteraf };
 }
 
 /** Beoordeling van een concept: accepteren, of verbeterpunten vastleggen. De versie zelf blijft ongewijzigd. */
@@ -145,21 +154,22 @@ export async function beoordeelConcept(c: pg.PoolClient, gebruiker: string, id: 
   const k = await leesConcept(c, id);
   if (!k) return { fout: 'onbekend' as const };
   const motivering = typeof b.motivering === 'string' ? b.motivering.trim() : '';
-  const punten = (Array.isArray(b.verbeterpunten) ? b.verbeterpunten : [])
-    .map((x) => ({ onderdeel: String((x as Rij)?.onderdeel ?? 'algemeen').slice(0, 60), tekst: String((x as Rij)?.tekst ?? '').trim().slice(0, 1000) }))
-    .filter((x) => x.tekst.length >= 3);
   if (b.besluit === 'geaccepteerd') {
+    // Definitieve acceptatie niet zolang er op deze versie punten OPEN of IN_BEHANDELING zijn (de database bewaakt dit ook).
+    const open = await openOpConcept(c, id);
+    if (open.length) return { fout: 'open' as const, open };
     await c.query(`UPDATE concept SET status = 'geaccepteerd', beoordeeld_door = $2, beoordeeld_op = now(), motivering = $3 WHERE id = $1`, [id, gebruiker, motivering || null]);
+    await legVast(c, { project: k.project_id, door: gebruiker, onderwerp: `concept v${k.versie}`, handeling: 'geaccepteerd', motivering });
+    await audit(c, { gebruiker, actie: 'concept_geaccepteerd', tabel: 'concept', id, nieuw: { motivering } });
   } else if (b.besluit === 'verbeterpunten') {
-    if (!punten.length) return { fout: 'punten' as const };
-    const alle = [...(k.verbeterpunten ?? []), ...punten.map((x) => ({ ...x, door: gebruiker, op: new Date().toISOString() }))];
-    await c.query(`UPDATE concept SET status = 'verbeterpunten', verbeterpunten = $3, beoordeeld_door = $2, beoordeeld_op = now(), motivering = $4 WHERE id = $1`,
-      [id, gebruiker, JSON.stringify(alle), motivering || null]);
-    await c.query("UPDATE project SET status = 'correctie', gewijzigd_op = now() WHERE id = $1 AND status IN ('interne_review', 'correctie')", [k.project_id]);
+    // Zelfde handeling als altijd, nu in de actieve registratie (tabel verbeterpunt) in plaats van de jsonb-kolom.
+    const r = await dienIn(c, gebruiker, id, b.verbeterpunten, motivering);
+    if ('fout' in r) return { fout: r.fout === 'teveel' ? 'teveel' as const : 'punten' as const };
+    await c.query('UPDATE concept SET beoordeeld_door = $2, beoordeeld_op = now(), motivering = $3 WHERE id = $1', [id, gebruiker, motivering || null]);
+    await legVast(c, { project: k.project_id, door: gebruiker, onderwerp: `concept v${k.versie}`, handeling: 'verbeterpunten vastgelegd',
+      waarde: { verbeterpunten: r.ids.length }, motivering });
+    await audit(c, { gebruiker, actie: 'concept_verbeterpunten', tabel: 'concept', id, nieuw: { motivering, verbeterpunten: r.ids } });
   } else return { fout: 'besluit' as const };
-  await legVast(c, { project: k.project_id, door: gebruiker, onderwerp: `concept v${k.versie}`, handeling: b.besluit === 'geaccepteerd' ? 'geaccepteerd' : 'verbeterpunten vastgelegd',
-    waarde: punten.length ? { verbeterpunten: punten } : undefined, motivering });
-  await audit(c, { gebruiker, actie: `concept_${b.besluit}`, tabel: 'concept', id, nieuw: { motivering, verbeterpunten: punten } });
   return { concept: await leesConcept(c, id) };
 }
 

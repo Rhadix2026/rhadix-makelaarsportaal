@@ -27,11 +27,13 @@ before(async () => {
   await pool.query("UPDATE kantoor SET telefoon = '0561 000000', email = 'info@linde.invalid', standaard_profiel = 'stads' WHERE id = $1", [A]);
   await maakGebruiker('mk@studio.test', { kantoren: [[A, 'kantoorbeheerder']] });   // zoals de testmakelaar op test
   await maakGebruiker('b@studio.test', { kantoren: [[B, 'kantoorbeheerder']] });
-  for (const e of ['mk', 'b']) c[e] = await login(app, `${e}@studio.test`);
+  await maakGebruiker('mw@studio.test', { kantoren: [[A, 'makelaar']] });              // gewone makelaar (collega)
+  await maakGebruiker('rhadix@studio.test', { platform: true });                        // Rhadix-platformbeheer
+  for (const e of ['mk', 'b', 'mw', 'rhadix']) c[e] = await login(app, `${e}@studio.test`);
 });
 after(() => app.close());
 
-const req = (wie: string, method: 'GET' | 'POST' | 'PUT', url: string, payload?: object) => app.inject({ method, url, headers: { cookie: c[wie] }, payload });
+const req = (wie: string, method: 'GET' | 'POST' | 'PUT' | 'PATCH', url: string, payload?: object) => app.inject({ method, url, headers: { cookie: c[wie] }, payload });
 
 test('makelaarroute Markt 27: import → keuzes → conceptwebsite → voortgang → bekijken → wijzigen → v2', { skip: !existsSync(BROCHURE) && 'brochure niet lokaal', timeout: 900_000 }, async () => {
   const nep = createServer((q, s) => { s.statusCode = q.url?.includes('bezet') ? 200 : 404; s.end('{}'); });
@@ -99,6 +101,17 @@ test('makelaarroute Markt 27: import → keuzes → conceptwebsite → voortgang
     assert.match(JSON.stringify(v1.bouw), /aangewezen in de aanlevering/, 'generator gebruikt de gekozen homepagefoto');
     assert.equal((await req('b', 'GET', `/api/concepten/${lijst.concepten[0].id}`)).statusCode, 404, 'ander kantoor ziet het concept niet');
 
+    // 8b. Verbeterpunten op v1 vanuit de preview: de gewone makelaar en de kantoorbeheerder dienen in.
+    const v1id = lijst.concepten[0].id as string;
+    assert.equal((await req('mw', 'POST', `/api/concepten/${v1id}/verbeterpunten`, { punten: [{ onderdeel: 'openingsbeeld', tekst: 'Liever de foto van de voorgevel' }, { onderdeel: 'teksten', tekst: 'Kerncijfers controleren' }] })).statusCode, 201);
+    assert.equal((await req('mk', 'POST', `/api/concepten/${v1id}/verbeterpunten`, { punten: [{ onderdeel: 'contact', tekst: 'Telefoonnummer kantoor ontbreekt' }] })).statusCode, 201);
+    assert.equal((await req('b', 'POST', `/api/concepten/${v1id}/verbeterpunten`, { punten: [{ tekst: 'ander kantoor' }] })).statusCode, 404, 'organisatiescheiding');
+    assert.equal((await req('mk', 'PUT', `/api/concepten/${v1id}/beoordeling`, { besluit: 'geaccepteerd' })).statusCode, 409, 'accepteren geblokkeerd');
+    let vp = (await req('rhadix', 'GET', `/api/projecten/${P}/verbeterpunten`)).json() as { id: string; tekst: string; status: string; verwerkt_in_versie: number | null }[];
+    const foto = vp.find((x) => x.tekst.startsWith('Liever'))!, kern = vp.find((x) => x.tekst.startsWith('Kerncijfers'))!, tel = vp.find((x) => x.tekst.startsWith('Telefoon'))!;
+    assert.equal((await req('rhadix', 'PATCH', `/api/verbeterpunten/${foto.id}`, { status: 'IN_BEHANDELING' })).statusCode, 200);
+    assert.equal((await req('mk', 'PATCH', `/api/verbeterpunten/${foto.id}`, { status: 'KLAAR' })).statusCode, 403, 'alleen Rhadix behandelt');
+
     // 9. Later wijzigen: andere homepagefoto, opnieuw aanmaken → v2; v1 blijft bewaard.
     const ander = goed[0].id as string;
     assert.equal((await req('mk', 'PUT', `/api/projecten/${P}/beslissingen/openingsbeeld`, { bestand_id: ander })).statusCode, 200);
@@ -109,6 +122,16 @@ test('makelaarroute Markt 27: import → keuzes → conceptwebsite → voortgang
     await wekVerwerker();
     lijst = (await req('mk', 'GET', `/api/projecten/${P}/concepten`)).json();
     assert.deepEqual(lijst.concepten.map((x: { versie: number }) => x.versie), [2, 1]);
+    // 9b. De nieuwe versie rondt niets af; Rhadix rondt alleen de werkelijk verwerkte punten af, met versie en toelichting.
+    vp = (await req('mw', 'GET', `/api/projecten/${P}/verbeterpunten`)).json();
+    assert.deepEqual(vp.map((x) => x.status).sort(), ['IN_BEHANDELING', 'OPEN', 'OPEN'], 'genereren sluit niets af');
+    assert.equal((await req('rhadix', 'PATCH', `/api/verbeterpunten/${foto.id}`, { status: 'KLAAR', verwerkt_in_versie: 2, reactie: 'Voorgevel (brochure p. 1) is nu de homepagefoto.' })).statusCode, 200);
+    assert.equal((await req('rhadix', 'PATCH', `/api/verbeterpunten/${kern.id}`, { status: 'GEANNULEERD', reactie: 'Kerncijfers komen ongewijzigd uit de brochure; gecontroleerd.' })).statusCode, 200);
+    assert.equal((await req('mk', 'PUT', `/api/concepten/${v1id}/beoordeling`, { besluit: 'geaccepteerd' })).json().open.length, 1, 'nog 1 open (telefoon)');
+    await req('rhadix', 'PATCH', `/api/verbeterpunten/${tel.id}`, { status: 'KLAAR', verwerkt_in_versie: 2, reactie: 'Telefoonnummer staat in de kantoorgegevens.' });
+    assert.equal((await req('mk', 'PUT', `/api/concepten/${v1id}/beoordeling`, { besluit: 'geaccepteerd' })).statusCode, 200, 'alles afgehandeld: accepteren mag');
+    vp = (await req('mw', 'GET', `/api/projecten/${P}/verbeterpunten`)).json();
+    assert.deepEqual(vp.map((x) => `${x.status}:${x.verwerkt_in_versie ?? '-'}`).sort(), ['GEANNULEERD:-', 'KLAAR:2', 'KLAAR:2'], 'makelaar ziet status en versie');
     // Alles in het besluitenlog.
     const log = (await pool.query('SELECT onderwerp FROM besluit WHERE project_id = $1', [P])).rows.map((r) => r.onderwerp);
     for (const o of ['domeinwens', 'openingsbeeld', 'zonschaduw', 'bronovername', 'vrijgave']) assert.ok(log.includes(o), o);

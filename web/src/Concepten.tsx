@@ -10,10 +10,10 @@ import { Fasebalk, useBeoordeling } from './Beoordeling.tsx';
 import { Meldingenoverzicht } from './onderdelen/Meldingen.tsx';
 import { useActiviteit } from './onderdelen/activiteit.ts';
 import { useRechten } from './onderdelen/rechten.ts';
+import { PuntenIndienen, PuntenPerVersie, type Punt } from './onderdelen/Verbeterpunten.tsx';
 
 const APPARATEN = [{ naam: 'Desktop', breedte: 1440, hoogte: 900 }, { naam: 'Tablet', breedte: 768, hoogte: 1024 }, { naam: 'Mobiel', breedte: 390, hoogte: 844 }];
 const STATUS: Record<string, [Toon, string]> = { te_beoordelen: ['let-op', 'te beoordelen'], geaccepteerd: ['goed', 'geaccepteerd'], verbeterpunten: ['fout', 'verbeterpunten'] };
-const ONDERDELEN = ['algemeen', 'openingsbeeld', 'teksten', "foto's", 'indeling', 'kenmerken', 'huisstijl', 'contact', 'mobiel'];
 const datum = (s?: string | null) => (s ? new Date(s).toLocaleString('nl-NL', { dateStyle: 'short', timeStyle: 'short' }) : '—');
 const duur = (ms?: number | null) => {
   if (ms == null) return '—';
@@ -23,7 +23,7 @@ const duur = (ms?: number | null) => {
 };
 
 /** Iframe op ware grootte, geschaald naar de beschikbare breedte. */
-function Voorbeeld({ token, breedte, hoogte }: { token: string; breedte: number; hoogte: number }) {
+export function Voorbeeld({ token, breedte, hoogte }: { token: string; breedte: number; hoogte: number }) {
   const ref = useRef<HTMLDivElement>(null);
   const [schaal, setSchaal] = useState(1);
   useEffect(() => {
@@ -151,7 +151,6 @@ export function ConceptScherm({ id, ik, versie }: { id: string; ik: Ik; versie?:
   const [fout, setFout] = useState<string | null>(null);
   const [melding, setMelding] = useState<{ toon: 'goed' | 'fout'; tekst: string } | null>(null);
   const [bezig, setBezig] = useState(false);
-  const [punten, setPunten] = useState<{ onderdeel: string; tekst: string }[]>([{ onderdeel: 'algemeen', tekst: '' }]);
   const [motivering, setMotivering] = useState('');
   const fase = useBeoordeling(id);
   const rechten = useRechten(id);
@@ -186,10 +185,12 @@ export function ConceptScherm({ id, ik, versie }: { id: string; ik: Ik; versie?:
     finally { setBezig(false); await laad(); }
   }
   const genereer = () => doe(() => api(`/api/projecten/${id}/concepten`, { methode: 'POST' }));
-  const beoordeel = (besluit: string) => doe(async () => {
-    const r = await api<Concept>(`/api/concepten/${k!.id}/beoordeling`, { methode: 'PUT', data: { besluit, motivering, verbeterpunten: punten.filter((p) => p.tekst.trim()) } });
-    setK(r); setPunten([{ onderdeel: 'algemeen', tekst: '' }]); setMotivering('');
-  }, besluit === 'geaccepteerd' ? 'Concept geaccepteerd. Er is niets gepubliceerd.' : 'Verbeterpunten vastgelegd. Maak na aanpassing een nieuwe conceptversie.');
+  // Accepteren (kantoorbeheerder/platform); verbeterpunten gaan via het paneel (tabel verbeterpunt).
+  const accepteer = () => doe(async () => {
+    const r = await api<Concept>(`/api/concepten/${k!.id}/beoordeling`, { methode: 'PUT', data: { besluit: 'geaccepteerd', motivering } });
+    setK(r); setMotivering('');
+  }, 'Concept geaccepteerd. Er is niets gepubliceerd.');
+  const herlaadConcept = () => { if (k) api<Concept>(`/api/concepten/${k.id}`).then(setK, () => {}); void laad(); };
   const g = d.generatie;
   const app = APPARATEN[apparaat];
 
@@ -243,21 +244,20 @@ export function ConceptScherm({ id, ik, versie }: { id: string; ik: Ik; versie?:
           <section className="kaart">
             <h2>Beoordeling van v{k.versie}</h2>
             <p><Badge toon={STATUS[k.status][0]}>{STATUS[k.status][1]}</Badge> {k.beoordeeld_op ? `· ${datum(k.beoordeeld_op)}${k.beoordeeld_door_naam ? ` door ${k.beoordeeld_door_naam}` : ''}` : ''}{k.motivering ? ` · ${k.motivering}` : ''}</p>
-            {k.verbeterpunten.length > 0 && <ul className="checklist">{k.verbeterpunten.map((p, i) => <li key={i} className="open"><span className="vink">!</span><span><strong>{p.onderdeel}</strong> {p.tekst} <span className="bron">({datum(p.op)})</span></span></li>)}</ul>}
-            {rechten.kantoorbeheer && <>
-              <h3 className="tussenkop">Verbeterpunten vastleggen</h3>
-              {punten.map((p, i) => (
-                <div key={i} className="inline-form" style={{ marginBottom: 6 }}>
-                  <select aria-label="Onderdeel" value={p.onderdeel} onChange={(e) => setPunten(punten.map((x, j) => (j === i ? { ...x, onderdeel: e.target.value } : x)))}>{ONDERDELEN.map((o) => <option key={o}>{o}</option>)}</select>
-                  <input aria-label="Verbeterpunt" placeholder="Wat moet er beter?" value={p.tekst} onChange={(e) => setPunten(punten.map((x, j) => (j === i ? { ...x, tekst: e.target.value } : x)))} />
-                </div>))}
-              <button type="button" className="tekstknop" onClick={() => setPunten([...punten, { onderdeel: 'algemeen', tekst: '' }])}>+ Nog een verbeterpunt</button>
+            <h3 className="tussenkop">Verbeterpunten op v{k.versie}</h3>
+            <PuntenPerVersie punten={k.verbeterpunten as unknown as Punt[]} versies={d.concepten.map((c) => c.versie)} beheer={ik.platformbeheer} alleenVersie={k.versie} onGewijzigd={herlaadConcept} />
+            {beheer && <>
+              <h3 className="tussenkop">Verbeterpunten doorgeven</h3>
+              <PuntenIndienen conceptId={k.id} versie={k.versie} onIngediend={herlaadConcept} />
+            </>}
+            {rechten.kantoorbeheer && k.status !== 'geaccepteerd' && <>
+              <h3 className="tussenkop">Accepteren</h3>
+              {(k.open_verbeterpunten ?? 0) > 0 && <p className="melding melding-let-op" role="status">Nog {k.open_verbeterpunten} verbeterpunt{k.open_verbeterpunten === 1 ? '' : 'en'} open of in behandeling op deze versie: accepteren kan pas na afhandeling.</p>}
               <div className="inline-form" style={{ marginTop: 10 }}>
                 <input aria-label="Toelichting" placeholder="Toelichting (optioneel)" value={motivering} onChange={(e) => setMotivering(e.target.value)} />
               </div>
               <div className="knoppen" style={{ marginTop: 10 }}>
-                <button type="button" className="knop knop-lijn" disabled={bezig || !punten.some((p) => p.tekst.trim().length >= 3)} onClick={() => void beoordeel('verbeterpunten')}>Verbeterpunten vastleggen</button>
-                <button type="button" className="knop knop-primair" disabled={bezig || k.status === 'geaccepteerd'} onClick={() => void beoordeel('geaccepteerd')}>Concept accepteren</button>
+                <button type="button" className="knop knop-primair" disabled={bezig || (k.open_verbeterpunten ?? 0) > 0} onClick={() => void accepteer()}>Concept accepteren</button>
               </div>
               <p className="bron">Accepteren betekent: dit is een goed eerste concept. Het is geen publicatie.</p>
             </>}

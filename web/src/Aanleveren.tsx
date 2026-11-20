@@ -370,7 +370,9 @@ function ConceptAanmaken({ id, k, c, domein, herlaad }: { id: string; k: Keuzes;
         {melding.tekst}{melding.open && <ul style={{ margin: '6px 0 0' }}>{melding.open.map((t) => <li key={t}>{t}</li>)}</ul>}</div>}
       {!lopend && nieuwste && <p className="domein-uitkomst domein-beschikbaar" role="status">
         <span><strong>Conceptwebsite versie {nieuwste.versie}</strong> gemaakt op {new Date(nieuwste.aangemaakt_op).toLocaleString('nl-NL')}. Het concept is afgeschermd en niet gepubliceerd.</span>
-        <span><a href={`/api/voorbeeld/${nieuwste.voorbeeld_token}/`} target="_blank" rel="noreferrer noopener">Concept bekijken (nieuw tabblad) →</a>{' · '}<a href={`#/projecten/${id}/concept/v${nieuwste.versie}`}>Verbeterpunten doorgeven</a></span></p>}
+        <span><a href={`/api/voorbeeld/${nieuwste.voorbeeld_token}/`} target="_blank" rel="noreferrer noopener">Concept bekijken (nieuw tabblad) →</a>{' · '}<a href={`#/projecten/${id}/bekijken/v${nieuwste.versie}`}>Concept bekijken en verbeterpunten doorgeven</a></span>
+        {(() => { const open = c.concepten.reduce((n, x) => n + (x.open_verbeterpunten ?? 0), 0);
+          return open > 0 ? <span>{open} verbeterpunt{open === 1 ? '' : 'en'} open of in behandeling bij Rhadix. <a href={`#/projecten/${id}/bekijken/v${nieuwste.versie}`}>Status bekijken</a></span> : null; })()}</p>}
 
       <div className="knoppen">
         <button type="button" className="knop knop-primair" disabled={!kan} onClick={() => void maakAan()}>
