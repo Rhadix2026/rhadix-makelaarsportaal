@@ -13,6 +13,7 @@ import { generatorStatus, profielCatalogus, profielen, standaardOntwerpsysteem }
 import { COOKIE, beeindigSessie, leesCookie, meldAan, sessieCookie, sessieGebruiker, wisCookie } from './auth.ts';
 import { meldAanViaRhadix, SSO_MELDING, ssoActief, wisSsoCache, type Huisstijl, type SsoFout } from './rhadixsso.ts';
 import { isThema, themaVoor, type Thema } from './themas.ts';
+import { controleerDomein, geldigNlDomein, legDomeinwens, legZonschaduw, leesKeuzes } from './keuzes.ts';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { leesKantoor, lijstKantoren, maakKantoor, valideerKantoor, wijzigKantoor } from './kantoren.ts';
 import { foutMelding } from './voortgang.ts';
@@ -427,6 +428,32 @@ export function bouwApp() {
   });
 
   // ── Broncontrole, kwaliteitscontrole en vrijgave (stap 5) ──────────────
+  // ── Keuzes van de makelaar (stap 3A.2): domeinwens, homepagefoto (= openingsbeeld), zon/schaduw ──
+  app.get<{ Params: { id: string } }>('/api/projecten/:id/keuzes', async (req, reply) => {
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Woningproject niet gevonden' });
+    const k = await alsGebruiker(req.gebruiker, (c) => leesKeuzes(c, req.params.id));
+    return k ?? reply.code(404).send({ fout: 'Woningproject niet gevonden' });
+  });
+
+  app.post<{ Params: { id: string }; Body: { domein?: string; controleer?: boolean } }>('/api/projecten/:id/keuzes/domein', { preHandler: productie }, async (req, reply) => {
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Woningproject niet gevonden' });
+    const domein = String(req.body?.domein ?? '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '');
+    if (!geldigNlDomein(domein)) return reply.code(400).send({ fout: 'Vul een geldige .nl-domeinnaam in, bijvoorbeeld denekamperstraat23b.nl' });
+    // De controle gebeurt altijd hier op de server; een uitslag van de interface wordt nooit overgenomen.
+    const uitkomst = req.body?.controleer ? await controleerDomein(domein) : null;
+    await alsGebruiker(req.gebruiker, (c) => legDomeinwens(c, req.gebruiker, req.params.id, domein, uitkomst));
+    return { domein, uitkomst, gereserveerd: false };
+  });
+
+  app.put<{ Params: { id: string }; Body: { gewenst?: boolean; bestand_id?: string | null } }>('/api/projecten/:id/keuzes/zonschaduw', { preHandler: productie }, async (req, reply) => {
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Woningproject niet gevonden' });
+    if (typeof req.body?.gewenst !== 'boolean') return reply.code(400).send({ fout: 'Kies ja of nee' });
+    const bestand = req.body.bestand_id && UUID.test(req.body.bestand_id) ? req.body.bestand_id : null;
+    const r = await alsGebruiker(req.gebruiker, (c) => legZonschaduw(c, req.gebruiker, req.params.id, req.body.gewenst!, bestand));
+    if ('fout' in r) return reply.code(r.fout === 'onbekend' ? 404 : 400).send({ fout: r.fout === 'onbekend' ? 'Woningproject niet gevonden' : 'Kies een foto van deze woning' });
+    return r;
+  });
+
   app.get<{ Params: { id: string } }>('/api/projecten/:id/beoordeling', async (req, reply) => {
     if (!UUID.test(req.params.id)) return reply.code(404).send({ fout: 'Woningproject niet gevonden' });
     const b = await alsGebruiker(req.gebruiker, (c) => beoordeling(c, req.params.id));

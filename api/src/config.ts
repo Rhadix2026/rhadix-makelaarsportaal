@@ -43,6 +43,8 @@ export const config = {
   // Alleen de PUBLIEKE sleutel: het portaal kan tokens controleren, nooit uitgeven.
   // Kantoorthema's (alleen opmaak): "slug=thema,…", zie api/src/themas.ts. Leeg = overal de Rhadix-look.
   kantoorthemas: leesKantoorthemas(env.STUDIO_KANTOORTHEMAS),
+  // Beschikbaarheid .nl-domeinnamen (stap 3A.2): RDAP van SIDN, alleen lezen, geen sleutel.
+  rdapNl: (env.STUDIO_RDAP_NL ?? 'https://rdap.sidn.nl').replace(/\/+$/, ''),
   sso: {
     sleutel: leesSleutel(env.STUDIO_SSO_SLEUTEL),
     uitgever: env.STUDIO_SSO_UITGEVER ?? 'suresync-id',

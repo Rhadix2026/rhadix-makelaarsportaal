@@ -5,6 +5,7 @@ import { Badge, Kaart, PaginaTitel, StatKaart, type Toon } from './onderdelen/ba
 import { ProfielKeuze } from './onderdelen/ProfielKeuze.tsx';
 import { useActiviteit } from './onderdelen/activiteit.ts';
 import { eenvoudigeAanlevering, kantoorRechten, magProjectenAanmaken } from './onderdelen/rechten.ts';
+import { fotoLabel, type GalerijFoto } from './onderdelen/FotoGalerij.tsx';
 
 // ── Status en voortgang ─────────────────────────────────────────────────────
 const STATUS_TOON: Record<string, Toon> = {
@@ -212,8 +213,35 @@ export function ProjectDetail({ id, ik }: { id: string; ik: Ik }) {
         </Kaart>
         <Kaart titel="Voortgang"><Voortgang status={p.status} /></Kaart>
       </div>
+      <KeuzesMakelaar id={p.id} />
       <ConceptVersies id={p.id} />
     </>
+  );
+}
+
+/** Keuzes van de makelaar (stap 3A.2) in het uitgebreide beheer: domeinwens, homepagefoto, zon/schaduw.
+ *  De homepagefoto is het bestaande openingsbeeld; corrigeren kan in de beoordeling. */
+function KeuzesMakelaar({ id }: { id: string }) {
+  type K = { domein: { voorstel: string | null; wens: { domein: string | null; uitkomst: { status: string; bron: string; op: string; reden?: string } | null; op: string } | null; definitief: string | null };
+    openingsbeeld: { gekozen: string | null }; zonschaduw: { gewenst: boolean; bestand_id: string | null; adres: string | null; op: string } | null;
+    fotos: (GalerijFoto & { geschikt_als_homepagefoto: boolean })[] };
+  const [k, setK] = useState<K | null>(null);
+  useEffect(() => { api<K>(`/api/projecten/${id}/keuzes`).then(setK, () => {}); }, [id]);
+  if (!k) return null;
+  const foto = (fid: string | null) => { const f = k.fotos.find((x) => x.id === fid); return f ? <span className="keuze-foto"><img src={`/api/bestanden/${f.id}/miniatuur`} alt="" />{fotoLabel(f)}</span> : '—'; };
+  const w = k.domein.wens;
+  return (
+    <div style={{ marginTop: 16 }}>
+      <Kaart titel="Keuzes makelaar">
+        <table className="tabel"><tbody>
+          <tr><td>Gewenste domeinnaam</td><td>{w?.domein ? <>{w.domein} — {w.uitkomst ? `${w.uitkomst.status} (${w.uitkomst.bron}, ${new Date(w.uitkomst.op).toLocaleString('nl-NL')})` : 'niet gecontroleerd'}; niet gereserveerd</> : <span className="stat-sub" style={{ display: 'inline' }}>nog niet opgegeven (voorstel: {k.domein.voorstel ?? '—'})</span>}</td></tr>
+          <tr><td>Definitief domein</td><td>{k.domein.definitief ?? '—'}</td></tr>
+          <tr><td>Homepagefoto</td><td>{foto(k.openingsbeeld.gekozen)} <a href={`#/projecten/${id}/beoordeling`}>wijzigen</a></td></tr>
+          <tr><td>Zon/schaduw</td><td>{!k.zonschaduw ? '—' : k.zonschaduw.gewenst ? <>aangevraagd · {foto(k.zonschaduw.bestand_id)} · locatie: {k.zonschaduw.adres ?? 'onbekend'}</> : 'niet gewenst'}</td></tr>
+        </tbody></table>
+        <p className="stat-sub">Alle keuzes staan ook in het besluitenlog van de beoordeling.</p>
+      </Kaart>
+    </div>
   );
 }
 

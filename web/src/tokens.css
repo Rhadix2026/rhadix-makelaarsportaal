@@ -411,3 +411,33 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 .vv-actief-balk > div { background-image: linear-gradient(110deg, transparent 35%, rgba(255,255,255,.28) 50%, transparent 65%); background-size: 200% 100%; animation: vv-glans 1.8s linear infinite; }
 @keyframes vv-glans { from { background-position: 150% 0; } to { background-position: -50% 0; } }
 @media (prefers-reduced-motion: reduce) { .vv-actief-balk > div { animation: none; background-image: none; } }
+
+/* ── Keuzes makelaar (stap 3A.2): fotogalerij, herkende gegevens, domeinuitkomst ── */
+.aanleveren .kaart + .kaart { margin-top: 16px; }
+.herkend { display: grid; grid-template-columns: max-content 1fr; gap: 6px 20px; margin: 0; }
+.herkend dt { color: var(--tekst3); font-size: 13px; }
+.herkend dd { margin: 0; }
+@media (max-width: 480px) { .herkend { grid-template-columns: 1fr; gap: 2px; } .herkend dd { margin-bottom: 8px; } }
+.galerij { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-top: 12px; }
+@media (max-width: 480px) { .galerij { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } }
+.galerij-foto { display: grid; gap: 6px; padding: 6px; background: var(--vlak); border: 2px solid var(--rand); border-radius: var(--radius); cursor: pointer; text-align: left; font: inherit; color: var(--tekst2); }
+.galerij-foto img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: calc(var(--radius) - 2px); background: var(--achtergrond); display: block; }
+.galerij-foto:hover:not(:disabled) { border-color: var(--navy); }
+.galerij-foto:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.galerij-gekozen { border-color: var(--navy); box-shadow: 0 0 0 2px var(--accent); }
+.galerij-ongeschikt { cursor: not-allowed; opacity: .55; }
+.galerij-label { font-size: 12.5px; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.galerij-vink { color: var(--navy); }
+.galerij-chip { font-size: 11px; padding: 1px 6px; border-radius: 10px; background: var(--blauw-licht); color: var(--navy); }
+.galerij-reden { font-size: 11.5px; color: var(--tekst3); }
+.domein-rij { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin: 12px 0; }
+.domein-uitkomst { padding: 12px 14px; border-radius: var(--radius); margin: 8px 0; display: grid; gap: 4px; }
+.domein-beschikbaar { background: var(--groen-licht); color: #166534; }
+.domein-bezet { background: var(--rood-licht); color: #991b1b; }
+.domein-onbekend { background: var(--amber-licht); color: #7A4310; }
+.domein-bron { font-size: 12px; opacity: .85; }
+.keuze-ja-nee { border: 0; padding: 0; margin: 0 0 8px; display: flex; gap: 24px; align-items: center; flex-wrap: wrap; }
+.keuze-ja-nee legend { font-weight: 600; margin-bottom: 8px; width: 100%; }
+.keuze-ja-nee label { display: flex; gap: 8px; align-items: center; font-size: 15px; cursor: pointer; }
+.keuze-foto { display: inline-flex; gap: 8px; align-items: center; }
+.keuze-foto img { width: 56px; height: 42px; object-fit: cover; border-radius: 3px; }

@@ -30,6 +30,8 @@ function Scherm({ hash, ik }: { hash: string; ik: Ik }) {
   if (eenvoudigeAanlevering(ik)) {
     if (hash === '#/aanleveren' || hash === '#/projecten/nieuw') return <AanleverFormulier ik={ik} />;
     if (hash.startsWith('#/kantoren')) return <Dashboard ik={ik} />;
+    // Projecten openen op de woningpagina met de keuzes, niet in de technische beheerschermen.
+    if ((m = hash.match(/^#\/projecten\/([0-9a-f-]{36})(?:\/(?:aanlevering|beoordeling|bewerken))?$/))) return <AangeleverdScherm id={m[1]} />;
   }
   if ((m = hash.match(/^#\/projecten\/([0-9a-f-]{36})\/aangeleverd$/))) return <AangeleverdScherm id={m[1]} />;
   if (hash === '#/aanleveren') return magProjectenAanmaken(ik) ? <ProjectFormulier /> : <Dashboard ik={ik} />;

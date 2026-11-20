@@ -10,6 +10,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { api, ApiFout, upload, type Aanlevering, type Bestand, type Ik, type Kantoor, type Project, type Verwerking } from './api.ts';
 import { Kaart, PaginaTitel } from './onderdelen/basis.tsx';
 import { VerwerkingVoortgang } from './onderdelen/VerwerkingVoortgang.tsx';
+import { FotoGalerij, type GalerijFoto } from './onderdelen/FotoGalerij.tsx';
 
 export const STANDAARD_PROFIEL = 'buitenplaats';
 
@@ -105,42 +106,148 @@ export function AanleverFormulier({ ik }: { ik: Ik }) {
   );
 }
 
-/** Na het aanleveren: de voortgang van de bestaande brochure-import en een korte samenvatting. */
+type Keuzes = {
+  project: { id: string; naam: string; adres: string | null; postcode: string | null; plaats: string | null; woningtype: string | null; status: string };
+  domein: { voorstel: string | null; wens: { domein: string | null; uitkomst: Uitkomst | null; op: string } | null; definitief: string | null };
+  openingsbeeld: { gekozen: string | null; voorstel: string | null; norm: number | null };
+  zonschaduw: { gewenst: boolean; bestand_id: string | null; adres: string | null; op: string } | null;
+  fotos: (GalerijFoto & { geschikt_als_homepagefoto: boolean })[];
+};
+type Uitkomst = { status: 'beschikbaar' | 'bezet' | 'onbekend'; bron: string; op: string; reden?: string };
+
+/** Woningpagina voor de makelaar: voortgang van de bestaande import, herkende gegevens en de drie keuzes. */
 export function AangeleverdScherm({ id }: { id: string }) {
   const [d, setD] = useState<Aanlevering | null>(null);
+  const [k, setK] = useState<Keuzes | null>(null);
   const [fout, setFout] = useState<string | null>(null);
-  const laad = () => api<Aanlevering>(`/api/projecten/${id}/aanlevering`).then(setD, (e) => setFout(e.message));
+  const laad = () => Promise.all([
+    api<Aanlevering>(`/api/projecten/${id}/aanlevering`).then(setD),
+    api<Keuzes>(`/api/projecten/${id}/keuzes`).then(setK),
+  ]).catch((e) => setFout(e.message));
   useEffect(() => { void laad(); }, [id]);
 
   if (fout) return <p className="melding melding-fout" role="alert">{fout}</p>;
-  if (!d) return null;
+  if (!d || !k) return null;
   const lopend = d.verwerkingen.find((v) => v.soort === 'brochure-import' && (v.status === 'wachtrij' || v.status === 'bezig'));
   const laatste = d.verwerkingen.find((v) => v.soort === 'brochure-import');
-  const actief = d.bestanden.filter((b) => !b.vervallen);
-  const fotos = actief.filter((b) => b.soort === 'foto').length;
+  const klaar = !lopend && laatste?.status === 'klaar';
   const gegevens = d.gegevens.filter((g) => g.vastgelegd).length;
   const aandacht = d.gegevens.filter((g) => g.conflict || g.afwijking).length;
+  const adresregel = [k.project.adres, [k.project.postcode, k.project.plaats].filter(Boolean).join(' ')].filter(Boolean).join(', ');
 
   return (
     <div className="aanleveren">
-      <PaginaTitel badge="Aangeleverd" titel={d.project.naam}
-        sub={lopend ? 'De brochure wordt verwerkt. U kunt deze pagina sluiten; de verwerking gaat door.' : 'Rhadix neemt de woning vanaf hier over.'} />
-      <Kaart titel="Brochureverwerking">
+      <PaginaTitel badge="Woning" titel={k.project.naam}
+        sub={lopend ? 'De brochure wordt verwerkt. U kunt deze pagina sluiten; de verwerking gaat door.' : klaar ? 'Controleer de herkende gegevens en maak drie keuzes. Rhadix verzorgt daarna de verdere uitwerking.' : undefined} />
+
+      <Kaart titel="Uit de brochure">
         {lopend ? <VerwerkingVoortgang key={lopend.id} projectId={id} start={lopend} onEinde={() => void laad()} />
           : laatste?.status === 'mislukt' ? <p className="melding melding-fout" role="alert">{laatste.melding ?? 'De verwerking is mislukt.'} Rhadix bekijkt de brochure.</p>
-          : laatste?.status === 'klaar' ? (
-            <div className="raster raster-2" style={{ gap: 12 }}>
-              <div><div className="stat-waarde">{fotos}</div><div className="stat-label">foto's uit de brochure</div></div>
-              <div><div className="stat-waarde">{gegevens}</div><div className="stat-label">woninggegevens gevonden</div></div>
-            </div>
+          : klaar ? (
+            <dl className="herkend">
+              <dt>Adres</dt><dd>{adresregel || <em>niet herkend; Rhadix vult dit aan</em>}</dd>
+              <dt>Woningtype</dt><dd>{k.project.woningtype || <em>niet herkend</em>}</dd>
+              <dt>Foto's</dt><dd>{k.fotos.length}</dd>
+              <dt>Gegevens</dt><dd>{gegevens}{aandacht > 0 ? ` (${aandacht} ${aandacht === 1 ? 'vraagt' : 'vragen'} nog aandacht; Rhadix controleert dit)` : ''}</dd>
+            </dl>
           ) : <p className="stat-sub">Nog niet gestart.</p>}
-        {laatste?.status === 'klaar' && aandacht > 0 && (
-          <p className="stat-sub">{aandacht} {aandacht === 1 ? 'gegeven vraagt' : 'gegevens vragen'} nog aandacht; Rhadix controleert dit.</p>)}
       </Kaart>
+
+      {klaar && <>
+        <DomeinKeuze id={id} k={k} />
+        <HomepageFotoKeuze id={id} k={k} herlaad={laad} />
+        <ZonSchaduwKeuze id={id} k={k} herlaad={laad} />
+      </>}
+
       <div className="knoppen" style={{ marginTop: 20 }}>
         <a className="knop knop-primair" href="#/projecten" style={{ textDecoration: 'none' }}>Naar woningprojecten</a>
         <a className="knop knop-lijn" href="#/aanleveren" style={{ textDecoration: 'none' }}>Nog een woning aanleveren</a>
       </div>
     </div>
+  );
+}
+
+function DomeinKeuze({ id, k }: { id: string; k: Keuzes }) {
+  const [domein, setDomein] = useState(k.domein.wens?.domein ?? k.domein.voorstel ?? '');
+  const [uitkomst, setUitkomst] = useState<Uitkomst | null>(k.domein.wens?.domein === domein ? k.domein.wens?.uitkomst ?? null : null);
+  const [bezig, setBezig] = useState(false);
+  const [fout, setFout] = useState<string | null>(null);
+  async function controleer() {
+    setBezig(true); setFout(null);
+    try { setUitkomst((await api<{ uitkomst: Uitkomst }>(`/api/projecten/${id}/keuzes/domein`, { methode: 'POST', data: { domein, controleer: true } })).uitkomst); }
+    catch (x) { setFout(x instanceof ApiFout ? x.message : 'Het portaal is niet bereikbaar'); setUitkomst(null); }
+    finally { setBezig(false); }
+  }
+  return (
+    <Kaart titel="1. Domeinnaam">
+      <p className="stat-sub">{k.domein.voorstel ? 'Voorgesteld op basis van het adres uit de brochure. U kunt de naam aanpassen.' : 'Vul de gewenste domeinnaam in.'}</p>
+      <div className="domein-rij">
+        <div className="veld" style={{ flex: '1 1 260px' }}>
+          <label htmlFor="domein">Gewenste domeinnaam</label>
+          <input id="domein" value={domein} onChange={(e) => { setDomein(e.target.value); setUitkomst(null); }} placeholder="bijvoorbeeld denekamperstraat23b.nl" autoComplete="off" inputMode="url" />
+        </div>
+        <button type="button" className="knop knop-primair" disabled={bezig || !domein.trim()} onClick={() => void controleer()}>{bezig ? 'Controleren…' : 'Controleer domeinnaam'}</button>
+      </div>
+      {fout && <p className="melding melding-fout" role="alert">{fout}</p>}
+      {uitkomst && (
+        <p className={`domein-uitkomst domein-${uitkomst.status}`} role="status">
+          {uitkomst.status === 'beschikbaar' && <><strong>Beschikbaar.</strong> Deze naam is nog niet geregistreerd. Hij is nog <strong>niet gereserveerd</strong>: Rhadix verzorgt de registratie.</>}
+          {uitkomst.status === 'bezet' && <><strong>Bezet.</strong> Deze naam is al geregistreerd. Kies een andere naam.</>}
+          {uitkomst.status === 'onbekend' && <><strong>Controle niet mogelijk.</strong> {uitkomst.reden ?? ''} Uw wens is wel bewaard.</>}
+          <span className="domein-bron">Bron: {uitkomst.bron}, {new Date(uitkomst.op).toLocaleString('nl-NL')}</span>
+        </p>
+      )}
+      <p className="stat-sub">U koopt hier geen domeinnaam. Registratie, betaling en beheer verzorgt Rhadix.</p>
+    </Kaart>
+  );
+}
+
+function HomepageFotoKeuze({ id, k, herlaad }: { id: string; k: Keuzes; herlaad: () => void }) {
+  const [bezig, setBezig] = useState(false);
+  const [fout, setFout] = useState<string | null>(null);
+  async function kies(bestand: string) {
+    setBezig(true); setFout(null);
+    try { await api(`/api/projecten/${id}/beslissingen/openingsbeeld`, { methode: 'PUT', data: { bestand_id: bestand } }); herlaad(); }
+    catch (x) { setFout(x instanceof ApiFout ? x.message : 'Het portaal is niet bereikbaar'); }
+    finally { setBezig(false); }
+  }
+  const geschikt = k.fotos.filter((f) => f.geschikt_als_homepagefoto).length;
+  return (
+    <Kaart titel="2. Homepagefoto">
+      <p className="stat-sub">Kies de foto die bovenaan de website komt. {k.openingsbeeld.norm ? `Geschikt: liggende foto's van minimaal ${k.openingsbeeld.norm} pixels breed (${geschikt} van ${k.fotos.length}).` : ''}</p>
+      {fout && <p className="melding melding-fout" role="alert">{fout}</p>}
+      <FotoGalerij label="Homepagefoto" fotos={k.fotos} gekozen={k.openingsbeeld.gekozen} voorstel={k.openingsbeeld.voorstel} bezig={bezig}
+        onKies={(f) => void kies(f)} kiesbaar={(f) => (k.fotos.find((x) => x.id === f.id)?.geschikt_als_homepagefoto ? null : 'Te klein of staand')} />
+    </Kaart>
+  );
+}
+
+function ZonSchaduwKeuze({ id, k, herlaad }: { id: string; k: Keuzes; herlaad: () => void }) {
+  const [gewenst, setGewenst] = useState<boolean | null>(k.zonschaduw ? k.zonschaduw.gewenst : null);
+  const [bezig, setBezig] = useState(false);
+  const [fout, setFout] = useState<string | null>(null);
+  async function bewaar(g: boolean, bestand: string | null) {
+    setBezig(true); setFout(null);
+    try { await api(`/api/projecten/${id}/keuzes/zonschaduw`, { methode: 'PUT', data: { gewenst: g, bestand_id: bestand } }); herlaad(); }
+    catch (x) { setFout(x instanceof ApiFout ? x.message : 'Het portaal is niet bereikbaar'); }
+    finally { setBezig(false); }
+  }
+  const gekozen = k.zonschaduw?.gewenst ? k.zonschaduw.bestand_id : null;
+  return (
+    <Kaart titel="3. Zon- en schaduwvisualisatie">
+      <fieldset className="keuze-ja-nee" disabled={bezig}>
+        <legend>Zon- en schaduwvisualisatie gewenst?</legend>
+        <label><input type="radio" name="zon" checked={gewenst === true} onChange={() => setGewenst(true)} /> Ja</label>
+        <label><input type="radio" name="zon" checked={gewenst === false} onChange={() => { setGewenst(false); void bewaar(false, null); }} /> Nee</label>
+      </fieldset>
+      {fout && <p className="melding melding-fout" role="alert">{fout}</p>}
+      {gewenst === true && <>
+        <p className="stat-sub">Kies een foto waarop het pand of de tuin duidelijk herkenbaar is. Als locatie gebruikt Rhadix het adres uit de brochure{k.project.adres ? ` (${k.project.adres}${k.project.plaats ? `, ${k.project.plaats}` : ''})` : ''} en controleert die.</p>
+        <FotoGalerij label="Foto voor de zon- en schaduwvisualisatie" fotos={k.fotos} gekozen={gekozen} bezig={bezig} onKies={(f) => void bewaar(true, f)} />
+        {gekozen ? <p className="domein-uitkomst domein-beschikbaar" role="status"><strong>Aangevraagd.</strong> Rhadix verzorgt de visualisatie en controleert de locatie en de foto.</p>
+          : <p className="stat-sub">Nog geen foto gekozen; de aanvraag is pas vastgelegd als u een foto kiest.</p>}
+      </>}
+      {k.zonschaduw && !k.zonschaduw.gewenst && gewenst === false && <p className="stat-sub">Vastgelegd: geen zon- en schaduwvisualisatie.</p>}
+    </Kaart>
   );
 }
