@@ -1,6 +1,6 @@
 # Voorstel: inlogmelding en aandachtspaneel voor verbeterpunten
 
-**Status (20-11-2026):** voorstel. Er zijn nog geen code- of databasewijzigingen gedaan en er is niets uitgerold.
+**Status (20-11-2026):** goedgekeurd en lokaal gebouwd (migratie 016, 150/150 tests). Niet op staging of test; uitrol pas na akkoord.
 
 ## 1. Wat er al is
 
