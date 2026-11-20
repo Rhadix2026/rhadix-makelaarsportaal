@@ -15,9 +15,10 @@ import { meldAanViaRhadix, SSO_MELDING, ssoActief, wisSsoCache, type Huisstijl, 
 import { isThema, themaVoor, type Thema } from './themas.ts';
 import { aanvraagBijConcept, metInternePlaatshouder } from './zonschaduw.ts';
 import { toegangsoverzicht } from './toegang.ts';
+import { aandacht, markeerGezien, relevanteVerbeterpunten, rolVan } from './aandacht.ts';
 import { behandel, dienIn, puntenOpen, puntenVanProject } from './verbeterpunten.ts';
 import { controleerDomein, geldigNlDomein, legDomeinwens, legZonschaduw, leesKeuzes } from './keuzes.ts';
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { leesKantoor, lijstKantoren, maakKantoor, valideerKantoor, wijzigKantoor } from './kantoren.ts';
 import { foutMelding } from './voortgang.ts';
 import { bulkGoedkeuren, conflictVoor, extractieVoor, herstelVerwerkingen, leverAan, overzicht, slaOp, trekIn, vraagVerwerking, wekVerwerker } from './aanlevering.ts';
@@ -193,8 +194,12 @@ export function bouwApp() {
 
   app.get('/api/ik', async (req) => {
     const i = await ik(req.gebruiker);
+    // Sessiecode (eenrichting afgeleid van het aanmeldtoken; niet het token zelf): elke nieuwe aanmelding geeft
+    // een nieuwe code, tabbladen binnen dezelfde aanmelding delen hem. Gebruikt voor 'één melding per sessie'.
+    const token = leesCookie(req.headers.cookie) ?? (ssoActief() ? leesCookie(req.headers.cookie, config.sso.cookie) : undefined);
+    const sessie = token ? createHash('sha256').update(`mp-sessie:${token}`).digest('base64url').slice(0, 16) : null;
     // Centraal uitloggen; daarna landt de gebruiker weer op de ingang van dit portaal (met het eigen merk).
-    return { ...i, huisstijl: req.huisstijl,
+    return { ...i, sessie, huisstijl: req.huisstijl,
       uitloggen: ssoActief() ? `${config.sso.platform}/api/auth/logout?app=${encodeURIComponent(config.sso.app)}${i.thema ? `&merk=${i.thema}` : ''}` : null };
   });
 
@@ -238,6 +243,23 @@ export function bouwApp() {
       centraal_beheer: wie.platformbeheer && ssoActief() && config.sso.platform ? `${config.sso.platform}/` : null,
       ...o,
     };
+  });
+
+  // ── Aandachtspunten: inlogmelding en aandachtspaneel (migratie 016) ──────
+  // Alleen lezen, behalve het eigen 'bewust bekeken'-tijdstip. Alles onder de rijregels van de aanvrager.
+  app.get('/api/aandacht', async (req) => {
+    const wie = await ik(req.gebruiker);
+    return alsGebruiker(req.gebruiker, (c) => aandacht(c, wie.platformbeheer));
+  });
+  app.get('/api/aandacht/verbeterpunten', async (req, reply) => {
+    const wie = await ik(req.gebruiker);
+    const r = await alsGebruiker(req.gebruiker, async (c) => { const rol = await rolVan(c, wie.platformbeheer); return rol ? relevanteVerbeterpunten(c, rol) : null; });
+    return r ?? reply.code(403).send({ fout: 'Geen verbeterpunten voor deze gebruiker' });
+  });
+  app.post<{ Params: { onderwerp: string } }>('/api/aandacht/:onderwerp/gezien', async (req, reply) => {
+    const r = await alsGebruiker(req.gebruiker, (c) => markeerGezien(c, req.params.onderwerp));
+    if ('fout' in r) return reply.code(404).send({ fout: 'Onbekend onderwerp' });
+    return r;
   });
 
   app.get('/api/kantoren', async (req) => alsGebruiker(req.gebruiker, lijstKantoren));

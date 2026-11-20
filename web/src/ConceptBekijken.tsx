@@ -12,7 +12,7 @@ import { Voorbeeld } from './Concepten.tsx';
 const WEERGAVE = [{ naam: 'Desktop', breedte: 1440, hoogte: 900 }, { naam: 'Mobiel', breedte: 390, hoogte: 844 }];
 const STATUS_CONCEPT: Record<string, string> = { te_beoordelen: 'te beoordelen', geaccepteerd: 'geaccepteerd', verbeterpunten: 'verbeterpunten ingediend' };
 
-export function ConceptBekijken({ id, ik, versie }: { id: string; ik: Ik; versie?: number }) {
+export function ConceptBekijken({ id, ik, versie, punt }: { id: string; ik: Ik; versie?: number; punt?: string }) {
   const [d, setD] = useState<ConceptenOverzicht | null>(null);
   const [punten, setPunten] = useState<Punt[]>([]);
   const [fout, setFout] = useState<string | null>(null);
@@ -27,6 +27,8 @@ export function ConceptBekijken({ id, ik, versie }: { id: string; ik: Ik; versie
     } catch (e) { setFout((e as Error).message); }
   }, [id]);
   useEffect(() => { void laad(); }, [laad]);
+  // Rechtstreeks naar één punt (link uit het aandachtspaneel): in beeld brengen en kort markeren.
+  useEffect(() => { if (!punt || !punten.length) return; const el = document.getElementById(`punt-${punt}`); if (el) { el.scrollIntoView({ block: 'center' }); el.classList.add('punt-gemarkeerd'); } }, [punt, punten.length]);
 
   if (fout) return <p className="melding melding-fout" role="alert">{fout}</p>;
   if (!d) return null;

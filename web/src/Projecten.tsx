@@ -5,6 +5,7 @@ import { Badge, Kaart, PaginaTitel, StatKaart, type Toon } from './onderdelen/ba
 import { ProfielKeuze } from './onderdelen/ProfielKeuze.tsx';
 import { useActiviteit } from './onderdelen/activiteit.ts';
 import { eenvoudigeAanlevering, kantoorRechten, magProjectenAanmaken } from './onderdelen/rechten.ts';
+import { AandachtPaneel } from './onderdelen/Aandacht.tsx';
 import { fotoLabel, type GalerijFoto } from './onderdelen/FotoGalerij.tsx';
 
 // ── Status en voortgang ─────────────────────────────────────────────────────
@@ -98,7 +99,10 @@ export function Dashboard({ ik }: { ik: Ik }) {
   const eenvoudig = eenvoudigeAanlevering(ik);   // één eigen kantoor: geen kantoorkeuze tonen
 
   return (
-    <>
+    <div className="dashboard-raster">
+      {/* Aandachtspaneel (migratie 016): rechts op brede schermen, ingeklapt boven het overzicht op smalle. */}
+      <AandachtPaneel />
+      <div className="dashboard-hoofd">
       <div className="rij" style={{ alignItems: 'flex-start' }}>
         <PaginaTitel badge="Dashboard" titel="Woningprojecten"
           sub={ik.platformbeheer ? 'Alle woningprojecten van alle kantoren.' : 'De woningprojecten van uw kantoren.'} />
@@ -146,7 +150,7 @@ export function Dashboard({ ik }: { ik: Ik }) {
                 : 'Er zijn nog geen woningprojecten.'}
             </p>
           ) : (
-            <table className="lijst">
+            <div className="tabel-schuif"><table className="lijst">
               <thead><tr><th>Woning</th><th>Kantoor</th><th>Status</th><th>Profiel</th><th>Concepten</th><th>Gewijzigd</th><th><span className="sr-only">Actie</span></th></tr></thead>
               <tbody>
                 {data.projecten.map((p) => (
@@ -165,11 +169,12 @@ export function Dashboard({ ik }: { ik: Ik }) {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           )}
         </section>
       )}
-    </>
+      </div>
+    </div>
   );
 }
 

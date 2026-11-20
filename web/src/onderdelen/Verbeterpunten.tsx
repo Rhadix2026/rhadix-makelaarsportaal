@@ -101,7 +101,7 @@ function Behandelen({ p, versies, onGewijzigd }: { p: Punt; versies: number[]; o
 export function PuntRegel({ p, beheer, versies, onGewijzigd, metProject }: { p: Punt; beheer: boolean; versies: number[]; onGewijzigd: () => void; metProject?: boolean }) {
   const [toon, label] = STATUS_PUNT[p.status];
   return (
-    <li className={`punt punt-${p.status.toLowerCase()}`}>
+    <li id={`punt-${p.id}`} className={`punt punt-${p.status.toLowerCase()}`}>
       <div className="punt-kop">
         <Badge toon={toon}>{p.status === 'KLAAR' && p.verwerkt_in_versie ? `${label} in v${p.verwerkt_in_versie}` : label}</Badge>
         <span className="punt-onderdeel">{p.onderdeel}</span>

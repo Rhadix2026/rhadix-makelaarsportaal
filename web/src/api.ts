@@ -26,6 +26,8 @@ export type Ik = {
   uitloggen?: string | null;
   /** Kantoorthema (stap 2), bv. 'morskieft'; null = Rhadix-look. */
   thema?: string | null;
+  /** Sessiecode (eenrichting afgeleid van de aanmelding): één inlogmelding per aanmelding. */
+  sessie?: string | null;
 };
 
 export type InlogOpties = { rhadix: string | null; inloggen?: string | null; merk?: string | null; lokaal: boolean; melding: string | null };

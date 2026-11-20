@@ -11,7 +11,8 @@ export function VerbeterpuntenOverzicht() {
   const [kantoor, setKantoor] = useState('');
   const [status, setStatus] = useState('');
   const laad = useCallback(() => api<(Punt & { versies: number[] })[]>('/api/verbeterpunten').then(setPunten, (e) => setFout(e.message)), []);
-  useEffect(() => { void laad(); }, [laad]);
+  // Bewust bekeken: na het laden het eigen tijdstip vastleggen (de punten zelf veranderen niet).
+  useEffect(() => { void laad().then(() => api('/api/aandacht/verbeterpunten/gezien', { methode: 'POST' }).catch(() => {})); }, [laad]);
   if (fout) return <p className="melding melding-fout" role="alert">{fout}</p>;
   if (!punten) return null;
   const kantoren = [...new Set(punten.map((p) => p.kantoor ?? ''))].sort();

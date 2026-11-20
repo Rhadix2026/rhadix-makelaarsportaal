@@ -14,6 +14,8 @@ import { eenvoudigeAanlevering, magGebruikersInzien, magProjectenAanmaken } from
 import { GebruikersScherm } from './Gebruikers.tsx';
 import { ConceptBekijken } from './ConceptBekijken.tsx';
 import { VerbeterpuntenOverzicht } from './VerbeterpuntenOverzicht.tsx';
+import { MijnVerbeterpunten } from './MijnVerbeterpunten.tsx';
+import { AandachtMelding } from './onderdelen/Aandacht.tsx';
 import { AangeleverdScherm, AanleverFormulier } from './Aanleveren.tsx';
 import { merkUitUrl, zetThema } from './themas.ts';
 
@@ -31,9 +33,9 @@ function Scherm({ hash, ik }: { hash: string; ik: Ik }) {
   let m;
   // Gebruikers en rollen (alleen lezen): platformbeheer en kantoorbeheerder; anders een melding.
   if (hash === '#/gebruikers') return magGebruikersInzien(ik) ? <GebruikersScherm /> : <p className="melding melding-fout">Alleen voor de kantoorbeheerder of platformbeheer.</p>;
-  if (hash === '#/verbeterpunten') return ik.platformbeheer ? <VerbeterpuntenOverzicht /> : <p className="melding melding-fout">Alleen voor platformbeheer.</p>;
+  if (hash === '#/verbeterpunten') return ik.platformbeheer ? <VerbeterpuntenOverzicht /> : ik.kantoren.length ? <MijnVerbeterpunten /> : <p className="melding melding-fout">Geen verbeterpunten voor deze gebruiker.</p>;
   // Concept bekijken met verbeterpunten: voor iedereen; de makelaar komt hier ook via de oude conceptlink.
-  if ((m = hash.match(/^#\/projecten\/([0-9a-f-]{36})\/bekijken(?:\/v(\d+))?$/))) return <ConceptBekijken key={hash} id={m[1]} ik={ik} versie={m[2] ? Number(m[2]) : undefined} />;
+  if ((m = hash.match(/^#\/projecten\/([0-9a-f-]{36})\/bekijken(?:\/v(\d+))?(?:\?punt=([0-9a-f-]{36}))?$/))) return <ConceptBekijken key={hash} id={m[1]} ik={ik} versie={m[2] ? Number(m[2]) : undefined} punt={m[3]} />;
   // Vereenvoudigde aanlevering (stap 3A.1): eenvoudig formulier, geen kantorenbeheer in de interface.
   if (eenvoudigeAanlevering(ik)) {
     if (hash === '#/aanleveren' || hash === '#/projecten/nieuw') return <AanleverFormulier ik={ik} />;
@@ -98,7 +100,7 @@ function App() {
           <a className="nav-link" href="#/projecten" aria-current={actief('#/projecten')}>Woningprojecten</a>
           {!eenvoudigeAanlevering(ik) && <a className="nav-link" href="#/kantoren" aria-current={actief('#/kantoren')}>Kantoren</a>}
           {magGebruikersInzien(ik) && <a className="nav-link" href="#/gebruikers" aria-current={actief('#/gebruikers')}>Gebruikers<span className="nav-lang"> en rollen</span></a>}
-          {ik.platformbeheer && <a className="nav-link" href="#/verbeterpunten" aria-current={actief('#/verbeterpunten')}>Verbeterpunten</a>}
+          {(ik.platformbeheer || ik.kantoren.length > 0) && <a className="nav-link" href="#/verbeterpunten" aria-current={actief('#/verbeterpunten')}>Verbeterpunten</a>}
           {ik.platformbeheer && <a className="nav-link" href="#/systeem" aria-current={actief('#/systeem')}>Systeem</a>}
         </>}
         rechts={<>
@@ -106,6 +108,7 @@ function App() {
           <button type="button" className="nav-knop" onClick={uitloggen}>Uitloggen</button>
         </>}
       />
+      <AandachtMelding ik={ik} />
       <Pagina><Scherm hash={hash} ik={ik} /></Pagina>
     </>
   );
