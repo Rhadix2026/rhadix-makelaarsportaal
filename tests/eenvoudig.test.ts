@@ -92,6 +92,7 @@ test('keuzes via de API: domeinwens met servercontrole, zon/schaduw, organisatie
     const k = (await req('a', 'GET', `/api/projecten/${p.id}/keuzes`)).json();
     assert.equal(k.domein.voorstel, 'denekamperstraat23b.nl');
     assert.deepEqual(k.fotos, []);
+    assert.equal(k.openingsbeeld.gekozen, null);
     wisDomeinCache();
     const d = await req('a', 'POST', `/api/projecten/${p.id}/keuzes/domein`, { domein: 'https://www.Denekamperstraat23B.nl/', controleer: true });
     assert.equal(d.statusCode, 200, d.body);
@@ -103,6 +104,15 @@ test('keuzes via de API: domeinwens met servercontrole, zon/schaduw, organisatie
     assert.equal(na.domein.wens.domein, 'denekamperstraat23b.nl');
     assert.equal(na.domein.wens.uitkomst.status, 'beschikbaar');
     assert.equal(na.domein.definitief, null, 'het definitieve domein blijft ongemoeid');
+    // Homepagefoto = bestaand openingsbeeld: kiezen via het bestaande besluit, terug te zien in /keuzes
+    const groot = (await pool.query(`INSERT INTO bestand (project_id, kantoor_id, soort, herkomst, originele_naam, mime, grootte, sha256, opslag, breedte, hoogte, pagina)
+      VALUES ($1, $2, 'foto', 'brochure', 'fotos/overig/01-a.jpg', 'image/jpeg', 1, repeat('a', 64), 'x/a', 4000, 2600, 1) RETURNING id`, [p.id, A])).rows[0].id;
+    const kf = (await req('a', 'GET', `/api/projecten/${p.id}/keuzes`)).json();
+    assert.equal(kf.fotos[0].pagina, 1);
+    assert.ok(kf.fotos[0].geschikt_als_homepagefoto, 'grote liggende foto is geschikt');
+    const ob = await req('a', 'PUT', `/api/projecten/${p.id}/beslissingen/openingsbeeld`, { bestand_id: groot });
+    assert.equal(ob.statusCode, 200, ob.body);
+    assert.equal((await req('a', 'GET', `/api/projecten/${p.id}/keuzes`)).json().openingsbeeld.gekozen, groot);
     // Zon/schaduw
     assert.equal((await req('a', 'PUT', `/api/projecten/${p.id}/keuzes/zonschaduw`, { gewenst: true })).statusCode, 400, 'ja zonder foto');
     const pb = (await req('b', 'POST', '/api/projecten', { kantoor_id: B, naam: 'Keuzes B', profiel: 'buitenplaats' })).json();

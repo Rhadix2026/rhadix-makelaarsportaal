@@ -87,7 +87,7 @@ export async function leesKeuzes(c: pg.PoolClient, projectId: string) {
       definitief: p.domein ?? null,
     },
     openingsbeeld: {
-      gekozen: (p.openingsbeeld_id as string | null) ?? null,
+      gekozen: (b?.beslissingen.openingsbeeld?.id as string | undefined) ?? null,   // bestaande beoordeling (bron: project.openingsbeeld_id)
       voorstel: b?.beslissingen.openingsbeeld_voorstel ?? null,
       norm: b?.beslissingen.openingsbeeld_norm ?? null,
     },
