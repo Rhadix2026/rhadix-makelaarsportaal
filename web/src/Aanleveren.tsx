@@ -191,9 +191,11 @@ function DomeinKeuze({ id, k }: { id: string; k: Keuzes }) {
       {fout && <p className="melding melding-fout" role="alert">{fout}</p>}
       {uitkomst && (
         <p className={`domein-uitkomst domein-${uitkomst.status}`} role="status">
-          {uitkomst.status === 'beschikbaar' && <><strong>Beschikbaar.</strong> Deze naam is nog niet geregistreerd. Hij is nog <strong>niet gereserveerd</strong>: Rhadix verzorgt de registratie.</>}
-          {uitkomst.status === 'bezet' && <><strong>Bezet.</strong> Deze naam is al geregistreerd. Kies een andere naam.</>}
-          {uitkomst.status === 'onbekend' && <><strong>Controle niet mogelijk.</strong> {uitkomst.reden ?? ''} Uw wens is wel bewaard.</>}
+          <span>
+            {uitkomst.status === 'beschikbaar' && <><strong>Beschikbaar.</strong> Deze naam is nog niet geregistreerd. Hij is nog <strong>niet gereserveerd</strong>: Rhadix verzorgt de registratie.</>}
+            {uitkomst.status === 'bezet' && <><strong>Bezet.</strong> Deze naam is al geregistreerd. Kies een andere naam.</>}
+            {uitkomst.status === 'onbekend' && <><strong>Controle niet mogelijk.</strong> {uitkomst.reden ?? ''} Uw wens is wel bewaard.</>}
+          </span>
           <span className="domein-bron">Bron: {uitkomst.bron}, {new Date(uitkomst.op).toLocaleString('nl-NL')}</span>
         </p>
       )}
@@ -244,7 +246,7 @@ function ZonSchaduwKeuze({ id, k, herlaad }: { id: string; k: Keuzes; herlaad: (
       {gewenst === true && <>
         <p className="stat-sub">Kies een foto waarop het pand of de tuin duidelijk herkenbaar is. Als locatie gebruikt Rhadix het adres uit de brochure{k.project.adres ? ` (${k.project.adres}${k.project.plaats ? `, ${k.project.plaats}` : ''})` : ''} en controleert die.</p>
         <FotoGalerij label="Foto voor de zon- en schaduwvisualisatie" fotos={k.fotos} gekozen={gekozen} bezig={bezig} onKies={(f) => void bewaar(true, f)} />
-        {gekozen ? <p className="domein-uitkomst domein-beschikbaar" role="status"><strong>Aangevraagd.</strong> Rhadix verzorgt de visualisatie en controleert de locatie en de foto.</p>
+        {gekozen ? <p className="domein-uitkomst domein-beschikbaar" role="status"><span><strong>Aangevraagd.</strong> Rhadix verzorgt de visualisatie en controleert de locatie en de foto.</span></p>
           : <p className="stat-sub">Nog geen foto gekozen; de aanvraag is pas vastgelegd als u een foto kiest.</p>}
       </>}
       {k.zonschaduw && !k.zonschaduw.gewenst && gewenst === false && <p className="stat-sub">Vastgelegd: geen zon- en schaduwvisualisatie.</p>}
