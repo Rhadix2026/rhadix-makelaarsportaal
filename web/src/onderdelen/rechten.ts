@@ -22,3 +22,8 @@ export function kantoorRechten(ik: Ik, kantoorId: string): Rechten {
 
 /** Mag deze gebruiker ergens woningprojecten aanmaken? */
 export const magProjectenAanmaken = (ik: Ik) => ik.platformbeheer || ik.kantoren.length > 0;
+
+/** Vereenvoudigde aanlevering (stap 3A.1): voor de makelaar van een kantoor met een kantoorthema
+ *  (voorlopig alleen Morskieft). Alleen de interface: zelfde API's, rechten en workflow. Platformbeheer
+ *  houdt altijd het uitgebreide beheer. */
+export const eenvoudigeAanlevering = (ik: Ik) => !ik.platformbeheer && !!ik.thema;

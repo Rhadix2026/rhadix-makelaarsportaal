@@ -10,7 +10,8 @@ import { Dashboard, ProjectDetail, ProjectFormulier } from './Projecten.tsx';
 import { AanleverScherm } from './Aanlevering.tsx';
 import { BeoordelingScherm } from './Beoordeling.tsx';
 import { ConceptScherm } from './Concepten.tsx';
-import { magProjectenAanmaken } from './onderdelen/rechten.ts';
+import { eenvoudigeAanlevering, magProjectenAanmaken } from './onderdelen/rechten.ts';
+import { AangeleverdScherm, AanleverFormulier } from './Aanleveren.tsx';
 import { merkUitUrl, zetThema } from './themas.ts';
 
 function useHash() {
@@ -25,6 +26,13 @@ function useHash() {
 
 function Scherm({ hash, ik }: { hash: string; ik: Ik }) {
   let m;
+  // Vereenvoudigde aanlevering (stap 3A.1): eenvoudig formulier, geen kantorenbeheer in de interface.
+  if (eenvoudigeAanlevering(ik)) {
+    if (hash === '#/aanleveren' || hash === '#/projecten/nieuw') return <AanleverFormulier ik={ik} />;
+    if (hash.startsWith('#/kantoren')) return <Dashboard ik={ik} />;
+  }
+  if ((m = hash.match(/^#\/projecten\/([0-9a-f-]{36})\/aangeleverd$/))) return <AangeleverdScherm id={m[1]} />;
+  if (hash === '#/aanleveren') return magProjectenAanmaken(ik) ? <ProjectFormulier /> : <Dashboard ik={ik} />;
   if (hash === '#/systeem') return ik.platformbeheer ? <StatusPagina /> : <p className="melding melding-fout">Alleen voor platformbeheer.</p>;
   if (hash === '#/kantoren/nieuw') return ik.platformbeheer ? <KantoorFormulier platform /> : <p className="melding melding-fout">Alleen voor platformbeheer.</p>;
   if ((m = hash.match(/^#\/kantoren\/([0-9a-f-]{36})\/bewerken$/))) return <KantoorFormulier id={m[1]} platform={ik.platformbeheer} />;
@@ -77,7 +85,7 @@ function App() {
         woordmerk={ik.huisstijl?.woordmerk} logo={ik.huisstijl?.logo} thema={ik.thema}
         links={<>
           <a className="nav-link" href="#/projecten" aria-current={actief('#/projecten')}>Woningprojecten</a>
-          <a className="nav-link" href="#/kantoren" aria-current={actief('#/kantoren')}>Kantoren</a>
+          {!eenvoudigeAanlevering(ik) && <a className="nav-link" href="#/kantoren" aria-current={actief('#/kantoren')}>Kantoren</a>}
           {ik.platformbeheer && <a className="nav-link" href="#/systeem" aria-current={actief('#/systeem')}>Systeem</a>}
         </>}
         rechts={<>

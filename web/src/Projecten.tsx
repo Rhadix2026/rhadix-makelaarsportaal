@@ -4,7 +4,7 @@ import { api, ApiFout, type ConceptenOverzicht, type Ik, type Kantoor, type Proj
 import { Badge, Kaart, PaginaTitel, StatKaart, type Toon } from './onderdelen/basis.tsx';
 import { ProfielKeuze } from './onderdelen/ProfielKeuze.tsx';
 import { useActiviteit } from './onderdelen/activiteit.ts';
-import { kantoorRechten, magProjectenAanmaken } from './onderdelen/rechten.ts';
+import { eenvoudigeAanlevering, kantoorRechten, magProjectenAanmaken } from './onderdelen/rechten.ts';
 
 // ── Status en voortgang ─────────────────────────────────────────────────────
 const STATUS_TOON: Record<string, Toon> = {
@@ -94,13 +94,16 @@ export function Dashboard({ ik }: { ik: Ik }) {
 
   const zet = (k: keyof typeof filter) => (e: { target: { value: string } }) => setFilter({ ...filter, [k]: e.target.value });
   const actieveKantoren = kantoren.filter((k) => k.status === 'actief');
+  const eenvoudig = eenvoudigeAanlevering(ik);   // één eigen kantoor: geen kantoorkeuze tonen
 
   return (
     <>
       <div className="rij" style={{ alignItems: 'flex-start' }}>
         <PaginaTitel badge="Dashboard" titel="Woningprojecten"
           sub={ik.platformbeheer ? 'Alle woningprojecten van alle kantoren.' : 'De woningprojecten van uw kantoren.'} />
-        {magProjectenAanmaken(ik) && actieveKantoren.length > 0 && <a className="knop knop-primair" href="#/projecten/nieuw" style={{ textDecoration: 'none' }}>Nieuw woningproject</a>}
+        {magProjectenAanmaken(ik) && actieveKantoren.length > 0 && (eenvoudig
+          ? <a className="knop knop-primair" href="#/aanleveren" style={{ textDecoration: 'none' }}>Woning aanleveren</a>
+          : <a className="knop knop-primair" href="#/projecten/nieuw" style={{ textDecoration: 'none' }}>Nieuw woningproject</a>)}
       </div>
 
       {data && (
@@ -112,13 +115,13 @@ export function Dashboard({ ik }: { ik: Ik }) {
       )}
 
       <div className="filters" role="search">
-        <div className="veld">
+        {!eenvoudig && <div className="veld">
           <label htmlFor="f-kantoor">Makelaarskantoor</label>
           <select id="f-kantoor" value={filter.kantoor} onChange={zet('kantoor')}>
             <option value="">Alle kantoren</option>
             {kantoren.map((k) => <option key={k.id} value={k.id}>{k.merknaam}</option>)}
           </select>
-        </div>
+        </div>}
         <div className="veld">
           <label htmlFor="f-status">Status</label>
           <select id="f-status" value={filter.status} onChange={zet('status')}>
