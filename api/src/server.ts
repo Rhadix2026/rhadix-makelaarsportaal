@@ -12,6 +12,7 @@ import { alsGebruiker, audit, databaseStatus, migreer, pool } from './db.ts';
 import { generatorStatus, profielCatalogus, profielen, standaardOntwerpsysteem } from './generator.ts';
 import { COOKIE, beeindigSessie, leesCookie, meldAan, sessieCookie, sessieGebruiker, wisCookie } from './auth.ts';
 import { meldAanViaRhadix, SSO_MELDING, ssoActief, wisSsoCache, type Huisstijl, type SsoFout } from './rhadixsso.ts';
+import { isThema, themaVoor, type Thema } from './themas.ts';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { leesKantoor, lijstKantoren, maakKantoor, valideerKantoor, wijzigKantoor } from './kantoren.ts';
 import { foutMelding } from './voortgang.ts';
@@ -30,15 +31,17 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 declare module 'fastify' { interface FastifyRequest { gebruiker: string; huisstijl: Huisstijl | null } }
 
-type Ik = { id: string; email: string; naam: string; platformbeheer: boolean; kantoren: { id: string; naam: string; rol: string }[]; bron: 'rhadix' | 'lokaal' };
+type Ik = { id: string; email: string; naam: string; platformbeheer: boolean; kantoren: { id: string; naam: string; rol: string }[]; bron: 'rhadix' | 'lokaal'; thema: Thema | null };
 
 async function ik(gebruiker: string): Promise<Ik> {
   return alsGebruiker(gebruiker, async (c) => {
     const g = (await c.query('SELECT id, email, naam, platformrol, extern_bron FROM gebruiker WHERE id = $1', [gebruiker])).rows[0];
-    const k = (await c.query(`SELECT k.id, k.merknaam AS naam, l.rol FROM lidmaatschap l JOIN kantoor k ON k.id = l.kantoor_id
+    const rijen = (await c.query(`SELECT k.id, k.merknaam AS naam, l.rol, k.slug FROM lidmaatschap l JOIN kantoor k ON k.id = l.kantoor_id
       WHERE l.gebruiker_id = $1 ORDER BY lower(k.merknaam)`, [gebruiker])).rows;
-    return { id: g.id, email: g.email, naam: g.naam, platformbeheer: g.platformrol === 'platformbeheer', kantoren: k,
-      bron: g.extern_bron === 'rhadix' ? 'rhadix' : 'lokaal' };
+    const platformbeheer = g.platformrol === 'platformbeheer';
+    return { id: g.id, email: g.email, naam: g.naam, platformbeheer, kantoren: rijen.map(({ slug: _s, ...k }) => k),
+      bron: g.extern_bron === 'rhadix' ? 'rhadix' : 'lokaal',
+      thema: themaVoor(platformbeheer, rijen.map((r) => r.slug), config.kantoorthemas) };
   });
 }
 
@@ -91,7 +94,9 @@ export function bouwApp() {
     // Wijzigende verzoeken alleen vanaf de eigen interface (naast SameSite=Strict op het cookie).
     const origin = req.headers.origin;
     if (req.method !== 'GET' && origin && !toegestaneHerkomst.has(origin)) return reply.code(403).send({ fout: 'Onbekende herkomst' });
-    if (req.url === '/api/inloggen' || req.url === '/api/gezond' || req.url === '/api/inlogopties') return;
+    // Op het pad vergelijken, zonder querystring (/api/inlogopties?merk=… blijft openbaar).
+    const pad = req.url.split('?')[0];
+    if (pad === '/api/inloggen' || pad === '/api/gezond' || pad === '/api/inlogopties') return;
     // Preview van een concept: toegang via het geheime voorbeeldtoken in het pad (alleen lezen).
     // Preview van een concept: eigen toegangscontrole in de route (aanmelding of previewcookie).
     if (req.method === 'GET' && req.url.startsWith('/api/voorbeeld/')) return;
@@ -150,15 +155,17 @@ export function bouwApp() {
   // ── Inloggen en sessie ──────────────────────────────────────────────────
   // Wat het inlogscherm toont: de Rhadix-login en/of de eigen login, en waarom een Rhadix-aanmelding
   // (nog) niet lukt. Geeft alleen iets over het cookie van de aanvrager zelf.
-  app.get('/api/inlogopties', async (req) => {
+  app.get<{ Querystring: { merk?: string } }>('/api/inlogopties', async (req) => {
     let melding: string | null = null;
+    const merk = isThema(req.query.merk) ? req.query.merk : null;
     const token = ssoActief() ? leesCookie(req.headers.cookie, config.sso.cookie) : undefined;
     if (token) { const r = await meldAanViaRhadix(token); if (!r.ok && r.fout !== 'ongeldig') melding = SSO_MELDING[r.fout]; }
     // `inloggen`: rechtstreekse ingang op het platform (?app=<slug>); na het inloggen stuurt Rhadix
     // direct terug naar dit portaal, zonder applicatieoverzicht. De slug is de vaste app-slug.
     return { rhadix: ssoActief() ? config.sso.platform : null,
-      inloggen: ssoActief() ? `${config.sso.platform}/?app=${encodeURIComponent(config.sso.app)}` : null,
-      lokaal: lokaleLoginToegestaan(req), melding };
+      inloggen: ssoActief() ? `${config.sso.platform}/?app=${encodeURIComponent(config.sso.app)}${merk ? `&merk=${merk}` : ''}` : null,
+      // Merkvariant van de ingang (alleen een bekend thema, zie api/src/themas.ts).
+      merk, lokaal: lokaleLoginToegestaan(req), melding };
   });
 
   app.post<{ Body: { email?: string; wachtwoord?: string } }>('/api/inloggen', async (req, reply) => {
@@ -180,9 +187,12 @@ export function bouwApp() {
     return { ok: true };
   });
 
-  app.get('/api/ik', async (req) => ({ ...(await ik(req.gebruiker)), huisstijl: req.huisstijl,
-    // Centraal uitloggen; daarna landt de gebruiker weer op de ingang van dit portaal.
-    uitloggen: ssoActief() ? `${config.sso.platform}/api/auth/logout?app=${encodeURIComponent(config.sso.app)}` : null }));
+  app.get('/api/ik', async (req) => {
+    const i = await ik(req.gebruiker);
+    // Centraal uitloggen; daarna landt de gebruiker weer op de ingang van dit portaal (met het eigen merk).
+    return { ...i, huisstijl: req.huisstijl,
+      uitloggen: ssoActief() ? `${config.sso.platform}/api/auth/logout?app=${encodeURIComponent(config.sso.app)}${i.thema ? `&merk=${i.thema}` : ''}` : null };
+  });
 
   // ── Koppeling kantoor ↔ Rhadix-organisatie (alleen platformbeheer; op ID, nooit op naam) ──
   app.get('/api/rhadix-organisaties', { preHandler: alleenPlatform }, async (req) => alsGebruiker(req.gebruiker, async (c) =>

@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, ApiFout, type Ik, type InlogOpties } from './api.ts';
+import { merkUitUrl, themaInfo } from './themas.ts';
 
 // Inloggen gaat via het Rhadix-platform (centrale login). De eigen wachtwoordlogin verschijnt alleen
 // waar de API die toestaat: lokaal, of online als noodtoegang via een SSH-tunnel.
@@ -9,7 +10,9 @@ export function Inloggen({ ingelogd }: { ingelogd: (ik: Ik) => void }) {
   const [wachtwoord, setWachtwoord] = useState('');
   const [fout, setFout] = useState<string | null>(null);
   const [bezig, setBezig] = useState(false);
-  useEffect(() => { api<InlogOpties>('/api/inlogopties').then(setOpties, () => setOpties({ rhadix: null, lokaal: true, melding: null })); }, []);
+  // Merkvariant (?merk=morskieft): eigen logo; de ingang naar Rhadix krijgt hetzelfde merk mee.
+  const merk = merkUitUrl(), t = themaInfo(merk);
+  useEffect(() => { api<InlogOpties>(`/api/inlogopties${merk ? `?merk=${merk}` : ''}`).then(setOpties, () => setOpties({ rhadix: null, lokaal: true, melding: null })); }, [merk]);
 
   async function verstuur(e: FormEvent) {
     e.preventDefault();
@@ -22,9 +25,10 @@ export function Inloggen({ ingelogd }: { ingelogd: (ik: Ik) => void }) {
 
   return (
     <div className="inlog-achtergrond">
+      {t && <img className="inlog-thema-logo" src={t.logo} alt={t.logoAlt} />}
       <form className="inlog-kaart formulier" onSubmit={verstuur} noValidate>
         <div>
-          <div className="inlog-merk">RHADIX</div>
+          {!t && <div className="inlog-merk">RHADIX</div>}
           <h1>Makelaarsportaal</h1>
           <p className="ondertitel">{opties.rhadix ? 'Log in met uw Rhadix-account.' : 'Log in met uw portaalaccount.'}</p>
         </div>
@@ -52,6 +56,7 @@ export function Inloggen({ ingelogd }: { ingelogd: (ik: Ik) => void }) {
             </button>
           </>
         )}
+        {t && <p className="inlog-powered">Powered by Rhadix</p>}
       </form>
     </div>
   );

@@ -32,6 +32,8 @@ x-app: &app
     STUDIO_SSO_PLATFORM: ${MP_SSO_PLATFORM:-}
     STUDIO_SSO_COOKIE: ${MP_SSO_COOKIE:-rhadix_sso}
     STUDIO_SSO_APP: ${MP_SSO_APP:-rhadix-makelaarsportaal}
+    # Kantoorthema's (alleen opmaak), bv. "rhadix-testmakelaars=morskieft". Leeg = Rhadix-look.
+    STUDIO_KANTOORTHEMAS: ${MP_KANTOORTHEMAS:-}
     # Eigen login online alleen als noodtoegang via een SSH-tunnel (zie LEESMIJ).
     STUDIO_LOKALE_LOGIN: ${MP_LOKALE_LOGIN:-tunnel}
     TZ: Europe/Amsterdam

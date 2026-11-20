@@ -24,9 +24,11 @@ export type Ik = {
   huisstijl?: { primair: string | null; accent: string | null; woordmerk: string | null; logo: string | null } | null;
   /** Centrale uitgang van het Rhadix-platform. */
   uitloggen?: string | null;
+  /** Kantoorthema (stap 2), bv. 'morskieft'; null = Rhadix-look. */
+  thema?: string | null;
 };
 
-export type InlogOpties = { rhadix: string | null; inloggen?: string | null; lokaal: boolean; melding: string | null };
+export type InlogOpties = { rhadix: string | null; inloggen?: string | null; merk?: string | null; lokaal: boolean; melding: string | null };
 
 export type RhadixOrganisatie = { tenant_id: string; naam: string; laatst_gezien: string; kantoor_id: string | null; kantoor: string | null };
 

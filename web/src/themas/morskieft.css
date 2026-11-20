@@ -1,0 +1,89 @@
+/* Kantoorthema Morskieft – De Twentsche Makelaar (bron: Morskieft_Styleguide.pdf, besluit 20-11-2026).
+   Donker #0B233A · Neutraal #EEEDE3 · Accent #EEA868 · Licht (wit). Lettertype: Inter (OFL, lokaal);
+   Sangbleu Sans volgt zodra de webfontbestanden en licentie er zijn (--font-kop).
+   Alles valt onder :root[data-thema="morskieft"]: zonder dat thema verandert er niets. */
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 400; font-display: swap; src: url('/themas/fonts/inter-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 500; font-display: swap; src: url('/themas/fonts/inter-latin-500-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 600; font-display: swap; src: url('/themas/fonts/inter-latin-600-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 700; font-display: swap; src: url('/themas/fonts/inter-latin-700-normal.woff2') format('woff2'); }
+
+:root[data-thema="morskieft"] {
+  --navy: #0B233A;           /* kop, primaire knoppen, links */
+  --navy-diep: #071827;
+  --accent: #EEA868;         /* accentlijnen, actieve navigatie, focus; nooit als tekstkleur op wit */
+  --accent-zacht: #FBEBDD;
+  --blauw-licht: #E9EDF1;
+  --sub: #B9C3CD;
+  --tekst: #0B233A;
+  --tekst2: #2C3E50;
+  --tekst3: #5B6773;         /* 5,9:1 op wit */
+  --achtergrond: #EEEDE3;    /* neutraal */
+  --vlak: #FFFFFF;
+  --rand: #DEDCCF;
+  --rand2: #C9C6B6;
+  --font: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+  --font-kop: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+  --radius: 4px;
+  --radius-lg: 6px;
+  --schaduw: 0 1px 2px rgba(11, 35, 58, .06);
+}
+:root[data-thema="morskieft"] body { font-size: 15px; letter-spacing: 0; }
+:root[data-thema="morskieft"] :is(h1, h2, h3) { font-family: var(--font-kop); font-weight: 500; letter-spacing: -0.01em; }
+:root[data-thema="morskieft"] .titel h1 { font-size: 34px; font-weight: 400; }
+:root[data-thema="morskieft"] .titel-badge { background: transparent; color: var(--tekst3); text-transform: uppercase; letter-spacing: .14em; font-size: 11px; font-weight: 600; padding: 0; }
+
+/* Kop en navigatie */
+:root[data-thema="morskieft"] .nav { background: var(--navy); border-bottom: 3px solid var(--accent); min-height: 76px; }
+:root[data-thema="morskieft"] .nav-merk { align-items: center; gap: 14px; }
+:root[data-thema="morskieft"] .nav-thema-logo { height: 54px; width: auto; display: block; }
+:root[data-thema="morskieft"] .nav-thema-label { font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--sub); border-left: 1px solid rgba(255,255,255,.22); padding-left: 14px; }
+:root[data-thema="morskieft"] .nav-link { font-weight: 500; letter-spacing: .02em; border-radius: 0; opacity: .85; border-bottom: 2px solid transparent; }
+:root[data-thema="morskieft"] .nav-link:hover { background: transparent; opacity: 1; border-bottom-color: rgba(238,168,104,.6); }
+:root[data-thema="morskieft"] .nav-link[aria-current="page"] { background: transparent; opacity: 1; border-bottom-color: var(--accent); }
+:root[data-thema="morskieft"] .nav-knop { border-radius: var(--radius); background: transparent; border: 1px solid rgba(255,255,255,.35); }
+:root[data-thema="morskieft"] .nav-knop:hover { background: rgba(255,255,255,.08); border-color: var(--accent); }
+
+/* Kaarten, tabellen en filters */
+:root[data-thema="morskieft"] .kaart { border-radius: var(--radius-lg); border: 1px solid var(--rand); box-shadow: none; }
+:root[data-thema="morskieft"] :is(.lijst, .tabel) th { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--tekst3); font-weight: 600; }
+:root[data-thema="morskieft"] .lijst td { font-size: 15px; }
+:root[data-thema="morskieft"] .lijst a { color: var(--navy); font-weight: 600; }
+:root[data-thema="morskieft"] .lijst tbody tr:hover td { background: #FAF9F4; }
+:root[data-thema="morskieft"] .veld :is(input, select, textarea) { border-radius: var(--radius); border-color: var(--rand2); background: #fff; font-family: var(--font); }
+:root[data-thema="morskieft"] .veld :is(input, select, textarea):focus { outline: 2px solid var(--accent); border-color: var(--navy); }
+
+/* Knoppen */
+:root[data-thema="morskieft"] .knop { border-radius: var(--radius); font-weight: 600; letter-spacing: .02em; }
+:root[data-thema="morskieft"] .knop-primair:hover { background: var(--navy-diep); box-shadow: inset 0 -2px 0 var(--accent); }
+:root[data-thema="morskieft"] .knop-lijn { border-color: var(--navy); color: var(--navy); }
+:root[data-thema="morskieft"] .knop-lijn:hover { background: var(--accent-zacht); }
+
+/* Status en voortgang */
+:root[data-thema="morskieft"] .badge { border-radius: 2px; font-size: 12px; letter-spacing: .02em; }
+:root[data-thema="morskieft"] .badge-let-op { background: var(--accent-zacht); color: #7A4310; }
+:root[data-thema="morskieft"] :is(.voortgang, progress) { accent-color: var(--accent); }
+
+/* Inlogscherm van het portaal zelf */
+:root[data-thema="morskieft"] .inlog-achtergrond { background: var(--navy); align-content: center; gap: 28px; }
+:root[data-thema="morskieft"] .inlog-thema-logo { width: min(300px, 70vw); height: auto; display: block; margin: 0 auto; }
+:root[data-thema="morskieft"] .inlog-kaart { border-radius: var(--radius-lg); border-top: 4px solid var(--accent); }
+:root[data-thema="morskieft"] .inlog-kaart h1 { font-weight: 400; font-size: 28px; }
+:root[data-thema="morskieft"] .inlog-powered { text-align: center; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--tekst3); }
+
+/* Mobiel: logo blijft in de kop; projectenlijst als blokken in plaats van een te brede tabel */
+@media (max-width: 520px) {
+  :root[data-thema="morskieft"] .nav { min-height: 64px; }
+  :root[data-thema="morskieft"] .nav-merk { display: flex; }
+  :root[data-thema="morskieft"] .nav-thema-label { display: none; }
+  :root[data-thema="morskieft"] .nav-thema-logo { height: 42px; }
+  :root[data-thema="morskieft"] .nav-links { margin-left: 10px; }
+}
+@media (max-width: 600px) {
+  :root[data-thema="morskieft"] .lijst thead { display: none; }
+  :root[data-thema="morskieft"] :is(.lijst, .lijst tbody, .lijst tr, .lijst td) { display: block; width: auto; }
+  :root[data-thema="morskieft"] .lijst tr { padding: 14px 16px; border-bottom: 1px solid var(--rand); }
+  :root[data-thema="morskieft"] .lijst tr:last-child { border-bottom: 0; }
+  :root[data-thema="morskieft"] .lijst td { border: 0; padding: 2px 0; font-size: 14px; }
+  :root[data-thema="morskieft"] .lijst td:first-child { font-size: 16px; margin-bottom: 4px; }
+  :root[data-thema="morskieft"] .titel h1 { font-size: 28px; }
+}

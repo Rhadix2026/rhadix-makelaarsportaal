@@ -7,6 +7,7 @@ import { bouwApp } from '../api/src/server.ts';
 import { migreer, pool } from '../api/src/db.ts';
 import { config } from '../api/src/config.ts';
 import { wisSsoCache } from '../api/src/rhadixsso.ts';
+import { leesKantoorthemas, themaVoor } from '../api/src/themas.ts';
 import { login, maakGebruiker, maakKantoorDirect, rhadixToken, ssoCookie, WACHTWOORD } from './hulp.ts';
 
 const app = bouwApp();
@@ -204,6 +205,46 @@ test('noodtoegang (STUDIO_LOKALE_LOGIN=tunnel): eigen login alleen via 127.0.0.1
     assert.equal((await app.inject({ method: 'GET', url: '/api/ik', headers: { cookie, host: 'makelaarsportaal-test.rhadix.nl' } })).statusCode, 401);
     assert.equal((await app.inject({ method: 'GET', url: '/api/ik', headers: { cookie, host: '127.0.0.1:8581' } })).statusCode, 200);
     const opties = (await app.inject({ method: 'GET', url: '/api/inlogopties', headers: { host: 'makelaarsportaal-test.rhadix.nl' } })).json();
-    assert.deepEqual(opties, { rhadix: 'https://platform.rhadix.invalid', inloggen: 'https://platform.rhadix.invalid/?app=rhadix-makelaarsportaal', lokaal: false, melding: null });
+    assert.deepEqual(opties, { rhadix: 'https://platform.rhadix.invalid', inloggen: 'https://platform.rhadix.invalid/?app=rhadix-makelaarsportaal', merk: null, lokaal: false, melding: null });
   } finally { config.lokaleLogin = vorig; }
+});
+
+test('kantoorthema (stap 2): alleen voor het gekoppelde kantoor, nooit voor platformbeheer; merk in in- en uitloglink', async () => {
+  const vorig = config.kantoorthemas;
+  config.kantoorthemas = leesKantoorthemas('sso-a=morskieft');
+  try {
+    const a = rhadixToken({ sub: randomUUID(), tenant_id: ORG_A, email: 'thema.a@rhadix.test', name: 'Thema A' });
+    const rA = await als(a, '/api/ik');
+    assert.equal(rA.statusCode, 200, rA.body);
+    const ikA = rA.json();
+    assert.equal(ikA.thema, 'morskieft');
+    assert.equal(ikA.uitloggen, 'https://platform.rhadix.invalid/api/auth/logout?app=rhadix-makelaarsportaal&merk=morskieft');
+    assert.equal(ikA.kantoren[0].slug, undefined, 'de slug lekt niet naar de interface');
+    // Ander kantoor: geen thema, gewone uitloglink
+    const b = rhadixToken({ sub: randomUUID(), tenant_id: ORG_B, email: 'thema.b@rhadix.test', name: 'Thema B' });
+    const ikB = (await als(b, '/api/ik')).json();
+    assert.equal(ikB.thema, null);
+    assert.equal(ikB.uitloggen, 'https://platform.rhadix.invalid/api/auth/logout?app=rhadix-makelaarsportaal');
+    // Platformbeheer: altijd de Rhadix-look
+    const pb = rhadixToken({ sub: randomUUID(), tenant_id: randomUUID(), email: 'thema.pb@rhadix.test', name: 'Beheer', role: 'RHADIX_ADMIN' });
+    assert.equal((await als(pb, '/api/ik')).json().thema, null);
+    // Inlogopties: alleen een bekend merk komt in de ingang
+    const met = (await app.inject({ method: 'GET', url: '/api/inlogopties?merk=morskieft' })).json();
+    assert.equal(met.merk, 'morskieft');
+    assert.equal(met.inloggen, 'https://platform.rhadix.invalid/?app=rhadix-makelaarsportaal&merk=morskieft');
+    for (const w of ['onbekend', 'MORSKIEFT', '__proto__', 'morskieft&x=1', '']) {
+      const o = (await app.inject({ method: 'GET', url: `/api/inlogopties?merk=${encodeURIComponent(w)}` })).json();
+      assert.equal(o.merk, null, w);
+      assert.equal(o.inloggen, 'https://platform.rhadix.invalid/?app=rhadix-makelaarsportaal', w);
+    }
+  } finally { config.kantoorthemas = vorig; }
+});
+
+test('kantoorthema: ongeldige koppeling laat het portaal niet starten', () => {
+  assert.deepEqual([...leesKantoorthemas('').entries()], []);
+  assert.deepEqual([...leesKantoorthemas(' a-b=morskieft , c=morskieft ').entries()], [['a-b', 'morskieft'], ['c', 'morskieft']]);
+  for (const fout of ['a=onbekend', 'A=morskieft', 'a', 'a=morskieft=x', '=morskieft'])
+    assert.throws(() => leesKantoorthemas(fout), /STUDIO_KANTOORTHEMAS/, fout);
+  assert.equal(themaVoor(false, ['a', 'b'], leesKantoorthemas('a=morskieft')), null, 'gemengd: geen thema');
+  assert.equal(themaVoor(false, ['a'], leesKantoorthemas('a=morskieft')), 'morskieft');
 });

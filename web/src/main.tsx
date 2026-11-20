@@ -11,6 +11,7 @@ import { AanleverScherm } from './Aanlevering.tsx';
 import { BeoordelingScherm } from './Beoordeling.tsx';
 import { ConceptScherm } from './Concepten.tsx';
 import { magProjectenAanmaken } from './onderdelen/rechten.ts';
+import { merkUitUrl, zetThema } from './themas.ts';
 
 function useHash() {
   const [hash, setHash] = useState(location.hash || '#/projecten');
@@ -55,8 +56,13 @@ function App() {
     setIk(null);
   }, [ik]);
   // Huisstijl van de eigen organisatie uit Rhadix in de interface (kleuren als CSS-variabelen).
+  // Een kantoorthema (stap 2) gaat vóór de organisatiekleuren uit Rhadix. Op het inlogscherm geldt
+  // het merk uit de URL (?merk=…), na het inloggen het thema van het eigen kantoor.
   useEffect(() => {
-    const h = ik?.huisstijl, s = document.documentElement.style;
+    if (ik === undefined) return;
+    const thema = ik ? ik.thema ?? null : merkUitUrl();
+    zetThema(thema);
+    const h = thema ? null : ik?.huisstijl, s = document.documentElement.style;
     if (h?.primair) s.setProperty('--navy', h.primair); else s.removeProperty('--navy');
     if (h?.accent) s.setProperty('--accent', h.accent); else s.removeProperty('--accent');
   }, [ik]);
@@ -68,7 +74,7 @@ function App() {
   return (
     <>
       <Navigatie
-        woordmerk={ik.huisstijl?.woordmerk} logo={ik.huisstijl?.logo}
+        woordmerk={ik.huisstijl?.woordmerk} logo={ik.huisstijl?.logo} thema={ik.thema}
         links={<>
           <a className="nav-link" href="#/projecten" aria-current={actief('#/projecten')}>Woningprojecten</a>
           <a className="nav-link" href="#/kantoren" aria-current={actief('#/kantoren')}>Kantoren</a>

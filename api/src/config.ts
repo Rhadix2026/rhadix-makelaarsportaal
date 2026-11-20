@@ -3,6 +3,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { leesKantoorthemas } from './themas.ts';
 
 export const ROOT = resolve(new URL('../..', import.meta.url).pathname);
 
@@ -40,6 +41,8 @@ export const config = {
   inactiviteitMs: Math.max(1, Number(env.STUDIO_INACTIVITEIT_MIN ?? 5)) * 60e3,
   // Centrale Rhadix-login (Datavalidatie als identity provider). Zonder sleutel staat de koppeling uit.
   // Alleen de PUBLIEKE sleutel: het portaal kan tokens controleren, nooit uitgeven.
+  // Kantoorthema's (alleen opmaak): "slug=thema,…", zie api/src/themas.ts. Leeg = overal de Rhadix-look.
+  kantoorthemas: leesKantoorthemas(env.STUDIO_KANTOORTHEMAS),
   sso: {
     sleutel: leesSleutel(env.STUDIO_SSO_SLEUTEL),
     uitgever: env.STUDIO_SSO_UITGEVER ?? 'suresync-id',
