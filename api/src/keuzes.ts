@@ -20,16 +20,13 @@ import { HERO_MINIMUM } from './fasen.ts';
 const label = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
 /**
- * Voorstel uit het adres en de plaats: "Markt 27" + "Wolvega" → "markt27wolvega.nl". Straat en huisnummer
- * alleen zijn vaak al bezet; met de plaats erbij is het voorstel herkenbaar en vaker vrij. Zonder bruikbaar
- * adres: null. Te lang (> 63 tekens) → zonder plaats.
+ * Voorstel uit straat en huisnummer: "Beusemkolkweg 16" → "beusemkolkweg16.nl" (zonder plaatsnaam). De makelaar
+ * kan het wijzigen; een bezette naam blokkeert niets. Zonder bruikbaar adres of langer dan 63 tekens: null.
  */
-export function domeinVoorstel(adres: string | null | undefined, plaats?: string | null): string | null {
+export function domeinVoorstel(adres: string | null | undefined): string | null {
   if (!adres) return null;
-  const a = label(adres), p = plaats ? label(plaats) : '';
-  if (a.length < 2) return null;
-  const l = a.length + p.length <= 63 ? a + p : a;
-  return l.length <= 63 ? `${l}.nl` : null;
+  const l = label(adres);
+  return l.length >= 2 && l.length <= 63 ? `${l}.nl` : null;
 }
 
 const NL_DOMEIN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.nl$/;
@@ -91,7 +88,7 @@ export async function leesKeuzes(c: pg.PoolClient, projectId: string) {
   return {
     project: { id: p.id, naam: p.naam, adres: p.adres, postcode: p.postcode, plaats: p.plaats, woningtype: p.woningtype, status: p.status },
     domein: {
-      voorstel: domeinVoorstel(p.adres, p.plaats),
+      voorstel: domeinVoorstel(p.adres),
       wens: wens ? { domein: wens.waarde?.domein ?? null, uitkomst: wens.waarde?.uitkomst ?? null, op: wens.op } : null,
       definitief: p.domein ?? null,
     },

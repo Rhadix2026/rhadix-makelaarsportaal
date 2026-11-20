@@ -18,6 +18,7 @@ import { generatorCommit, generatorModule, generatorVersie, huisstijlFuncties, p
 import { laatsteImport, overzicht } from './aanlevering.ts';
 import { opslagPad } from './opslag.ts';
 import { deelControleIn } from './indeling.ts';
+import { navigatieVoorKopers, publiekeNaam, tijdelijkAdres } from './publiek.ts';
 import { HERO_MINIMUM, kiesbaarAlsOpeningsbeeld, nietBlokkerendVoorIntern } from './fasen.ts';
 
 type Rij = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -53,6 +54,8 @@ export async function exporteer(c: pg.PoolClient, projectId: string, map: string
   const hoofdstukken: { id: string; titel: string }[] = imp.rapport.hoofdstukken;
   const titel = (id: string) => hoofdstukken.find((h) => h.id === id)?.titel ?? id;
   const adres = [p.adres, p.plaats].filter(Boolean).join(' in ');
+  // De projectnaam (p.naam) is intern en gaat nooit naar de website: overal de publieke naam (objectadres).
+  const naam = publiekeNaam(p);
 
   // Foto's: de volgorde en het hoofdstuk van de brochure; een losse foto neemt de plaats in van
   // het brochurebeeld dat hij vervangt. Losse foto's zonder tegenhanger komen achteraan.
@@ -75,7 +78,7 @@ export async function exporteer(c: pg.PoolClient, projectId: string, map: string
     const naam = `${String(i + 1).padStart(2, '0')}-${b.herkomst === 'upload' ? 'los' : `p${String(b.pagina).padStart(2, '0')}`}${extname(b.opslag).toLowerCase()}`;
     mkdirSync(join(map, 'fotos', hoofdstuk), { recursive: true });
     copyFileSync(opslagPad(b.opslag), join(map, 'fotos', hoofdstuk, naam));
-    const alt = (b.herkomst === 'brochure' && importCsv.get(b.originele_naam)?.alt) || `Foto ${i + 1} bij '${titel(hoofdstuk)}', ${adres || p.naam}`;
+    const alt = (b.herkomst === 'brochure' && importCsv.get(b.originele_naam)?.alt) || `Foto ${i + 1} bij '${titel(hoofdstuk)}', ${adres || naam}`;
     rijen.push(csvRij(`fotos/${hoofdstuk}/${naam}`, alt, '', p.openingsbeeld_id === b.id ? 'ja' : '', '', ''));
     bestanden.push({ pad: `fotos/${hoofdstuk}/${naam}`, id: b.id });
   });
@@ -85,10 +88,12 @@ export async function exporteer(c: pg.PoolClient, projectId: string, map: string
     const naam = b.originele_naam.replace(/^plattegronden\//, '');
     copyFileSync(opslagPad(b.opslag), join(map, 'plattegronden', naam));
     const r = importCsv.get(b.originele_naam);
-    rijen.push(csvRij(`plattegronden/${naam}`, r?.alt ?? `Plattegrond van ${p.adres ?? p.naam}`, r?.bijschrift ?? '', '', '', ''));
+    rijen.push(csvRij(`plattegronden/${naam}`, r?.alt ?? `Plattegrond van ${naam}`, r?.bijschrift ?? '', '', '', ''));
   }
   writeFileSync(join(map, 'fotos.csv'), rijen.join('\n') + '\n');
-  copyFileSync(join(importMap, 'teksten.md'), join(map, 'teksten.md'));
+  // Navigatie en koppen begrijpelijk voor kopers (uit de bestaande koppen; niets verzonnen).
+  const nav = navigatieVoorKopers(readFileSync(join(importMap, 'teksten.md'), 'utf8'), p.plaats);
+  writeFileSync(join(map, 'teksten.md'), nav.md);
 
   // Logo: dat van het kantoor, anders het logo uit de brochure.
   let logo: string | null = null;
@@ -116,23 +121,23 @@ export async function exporteer(c: pg.PoolClient, projectId: string, map: string
   const disclaimer = vast.find((g: Rij) => g.sleutel === 'disclaimer')?.vastgelegd.waarde;
   const telefoon = k.telefoon as string | null;
   const woning = {
-    slug: p.slug, naam: p.naam, adres: p.adres ?? undefined, ...(p.postcode ? { postcode: p.postcode } : {}), plaats: p.plaats ?? undefined,
+    slug: p.slug, naam, adres: p.adres ?? undefined, ...(p.postcode ? { postcode: p.postcode } : {}), plaats: p.plaats ?? undefined,
     ...(p.profiel ? { profiel: p.profiel } : {}),
     ...(huisstijl ? { huisstijl } : {}),
     makelaar: { naam: k.merknaam, ...(k.adresregels?.length ? { adresregels: k.adresregels } : {}), ...(telefoon ? { telefoon, telefoon_int: '+31' + telefoon.replace(/\D/g, '').replace(/^31/, '').replace(/^0/, '') } : {}),
       ...(k.email ? { email: k.email } : {}), ...(k.website ? { website: k.website } : {}), ...(logo ? { logo } : {}) },
     site: {
       // Zonder definitief domein krijgt het interne concept altijd het tijdelijke, onbereikbare adres
-      // <slug>.invalid (het concept wordt niet gepubliceerd). Het definitieve domein is verplicht vóór publicatie.
-      canonical: p.domein ? `https://${p.domein}/` : `https://${p.slug}.invalid/`,
-      titel: [p.adres ?? p.naam, p.plaats].filter(Boolean).join(', '), index: false, ...(disclaimer ? { disclaimer } : {}),
+      // concept-<id>.invalid (het concept wordt niet gepubliceerd). Het definitieve domein is verplicht vóór publicatie.
+      canonical: p.domein ? `https://${p.domein}/` : `https://${tijdelijkAdres(p.id)}/`,
+      titel: [naam, p.plaats].filter(Boolean).join(', '), index: false, ...(disclaimer ? { disclaimer } : {}),
     },
     feiten,
     herkomst: { soort: 'brochure', bestand: imp.rapport.bron, sha256: imp.rapport.sha256 },
     rechten: p.rechten?.bevestigd ? { bevestigd: true, toelichting: p.rechten.toelichting } : { bevestigd: false },
   };
   writeFileSync(join(map, 'woning.json'), JSON.stringify(woning, null, 2) + '\n');
-  return { fotos: reeks.length, plattegronden: plattegronden.length, logo: !!logo, feiten: feiten.length, huisstijl: !!huisstijl, bestanden };
+  return { navigatie: nav.wijzigingen, fotos: reeks.length, plattegronden: plattegronden.length, logo: !!logo, feiten: feiten.length, huisstijl: !!huisstijl, bestanden };
 }
 
 /** Voert de kwaliteitscontrole uit en bewaart haar als verwerking (soort kwaliteitscontrole). */
@@ -302,7 +307,7 @@ export async function beoordeling(c: pg.PoolClient, projectId: string) {
       'Nog niet bevestigd: blokkeert het interne concept niet. Vóór publicatie verplicht, met een korte toelichting.', false),
     punt(3, 'profiel', 'Presentatieprofiel gekozen', !!p.profiel, 'Kies het presentatieprofiel.'),
     punt(3, 'websiteadres', 'Definitief websiteadres vastgelegd', !!p.domein,
-      `Het interne concept krijgt het tijdelijke adres ${p.slug}.invalid. Vóór publicatie is het definitieve domein verplicht.`, false),
+      `Het interne concept krijgt het tijdelijke adres ${tijdelijkAdres(projectId)}. Vóór publicatie is het definitieve domein verplicht.`, false),
     punt(3, 'openingsbeeld', 'Openingsbeeld gekozen', heroKiesbaar, geschiktHero.length ? 'Kies het openingsbeeld uit de liggende foto\'s.' : `Geen foto is bruikbaar (liggend, ≥ ${HERO_MINIMUM} px): lever een origineel aan.`),
     punt(3, 'openingsbeeld_kwaliteit', `Openingsbeeld voldoet aan de beeldnorm (≥ ${heroNorm} px)`, !heroKiesbaar || hero!.breedte >= heroNorm,
       `Het gekozen openingsbeeld is ${hero?.breedte ?? 0} px breed: op grote schermen minder scherp. Vraag zo mogelijk het origineel op.`, false),
@@ -370,7 +375,7 @@ export async function uitgangspunten(c: pg.PoolClient, projectId: string) {
     // Intern concept: wat vóór publicatie nog verplicht is.
     voor_publicatie: {
       publicatierechten: st.beslissingen.rechten?.bevestigd ? 'bevestigd' : 'niet bevestigd',
-      websiteadres: st.beslissingen.domein ? `https://${st.beslissingen.domein}/` : `tijdelijk: https://${st.project.slug}.invalid/ (niet bereikbaar)`,
+      websiteadres: st.beslissingen.domein ? `https://${st.beslissingen.domein}/` : `tijdelijk: https://${tijdelijkAdres(projectId)}/ (niet bereikbaar)`,
     },
   };
 }
@@ -406,7 +411,7 @@ export async function beslis(c: pg.PoolClient, gebruiker: string, projectId: str
     if (!(await profielen()).includes(String(b.profiel))) return { fout: 'waarde' as const, melding: 'Onbekend presentatieprofiel' };
     await zet('profiel = $2', [b.profiel]); await log('gekozen', { profiel: b.profiel, voorstel: st.beslissingen.profiel_voorstel?.waarde ?? null });
   } else if (onderwerp === 'websiteadres') {
-    if (b.conceptadres === true) { await zet('conceptadres = true', []); await log('tijdelijk conceptadres', { adres: `${st.project.slug}.invalid` }); }
+    if (b.conceptadres === true) { await zet('conceptadres = true', []); await log('tijdelijk conceptadres', { adres: tijdelijkAdres(projectId) }); }
     else {
       const d = String(b.domein ?? '').toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
       if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(d)) return { fout: 'waarde' as const, melding: 'Geen geldige domeinnaam' };

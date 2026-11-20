@@ -49,7 +49,7 @@ test('makelaarroute Markt 27: import → keuzes → conceptwebsite → voortgang
     let k = (await req('mk', 'GET', `/api/projecten/${P}/keuzes`)).json();
     assert.equal(k.project.naam, 'test rene', 'handmatige projectnaam niet overschreven');
     assert.match(k.project.adres, /^Markt 27/); assert.equal(k.project.plaats, 'Wolvega');
-    assert.match(k.domein.voorstel, /^markt27a?wolvega\.nl$/, `voorstel met plaats: ${k.domein.voorstel}`);
+    assert.match(k.domein.voorstel, /^markt27a?\.nl$/, `voorstel zonder plaats: ${k.domein.voorstel}`);
     assert.equal(k.domein.wens, null, 'voorstel ≠ gecontroleerde wens');
 
     // 3. Homepagefoto: meer keuze dan alleen de norm; voorkeur volgens de norm; lagere resolutie kiesbaar.

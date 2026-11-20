@@ -1,5 +1,6 @@
 // Stap 5: broncontrole, kwaliteitscontrole en vrijgave voor conceptgeneratie, met Markt 27 als
 // praktijkvoorbeeld. Er wordt niets gegenereerd of gepubliceerd.
+import { tijdelijkAdres } from '../api/src/publiek.ts';
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -125,7 +126,7 @@ test('Markt 27: van aanlevering via broncontrole en kwaliteitscontrole naar vrij
   const k = (await pool.query("SELECT volgnummer FROM verwerking WHERE project_id = $1 AND soort = 'kwaliteitscontrole' ORDER BY volgnummer DESC LIMIT 1", [P])).rows[0];
   const map = join(config.opslag, 'projecten', P, 'controle', String(k.volgnummer));
   const w = JSON.parse(readFileSync(join(map, 'woning.json'), 'utf8'));
-  assert.equal(w.rechten.bevestigd, true); assert.equal(w.site.canonical, `https://${b.project.slug}.invalid/`); assert.equal(w.site.index, false);
+  assert.equal(w.rechten.bevestigd, true); assert.equal(w.site.canonical, `https://${tijdelijkAdres(b.project.id)}/`); assert.ok(!w.site.canonical.includes(b.project.slug), 'geen slug (interne naam) in het adres'); assert.equal(w.site.index, false);
   assert.equal(w.makelaar.naam, 'Linde Makelaars'); assert.equal(w.profiel, 'stads'); assert.ok(w.huisstijl);
   assert.ok(!w.feiten.some((f: { sleutel: string }) => f.sleutel === 'warmwater'), 'afgewezen feit niet in de export');
   assert.equal(w.feiten.find((f: { sleutel: string }) => f.sleutel === 'kamers').verificatie, 'bevestigd');

@@ -77,7 +77,7 @@ function SnelleBeoordeling({ d, profielen, bezig, voerUit }: { d: Data; profiele
           <select id="snel-profiel" value={v.profiel} onChange={zet('profiel')}><option value="">Kies een profiel</option>
             {profielen.map((p) => <option key={p.naam} value={p.naam}>{p.naam}{b.profiel_voorstel?.waarde === p.naam ? ' (voorstel)' : ''}</option>)}</select></div>}
         {nodig.adres && <div className="veld"><label htmlFor="snel-domein">Websiteadres (optioneel)</label>
-          <input id="snel-domein" placeholder={`leeg = tijdelijk conceptadres ${d.project.slug}.invalid`} value={v.domein ?? ''} onChange={zet('domein')} /></div>}
+          <input id="snel-domein" placeholder={`leeg = tijdelijk conceptadres concept-${d.project.id.replace(/-/g, '').slice(0, 10)}.invalid`} value={v.domein ?? ''} onChange={zet('domein')} /></div>}
         {nodig.beeld && <div className="veld"><label htmlFor="snel-beeld">Openingsbeeld</label>
           <select id="snel-beeld" value={v.openingsbeeld} onChange={zet('openingsbeeld')}><option value="">Kies een foto</option>
             {b.openingsbeeld_kandidaten.map((f) => <option key={f.id} value={f.id}>{f.herkomst === 'brochure' ? `brochure p. ${f.pagina}` : 'losse foto'}, {f.breedte}×{f.hoogte}{f.kwaliteit === 'beperkt' ? ' (lagere resolutie)' : ''}{b.openingsbeeld_voorstel === f.id ? ' (voorstel)' : ''}</option>)}</select></div>}
@@ -249,7 +249,7 @@ export function BeoordelingScherm({ id, ik }: { id: string; ik: Ik }) {
           </div>
           <div className="beslissing">
             <div className="beslissing-kop">Websiteadres {b.domein ? <Badge toon="goed">{b.domein}</Badge> : b.conceptadres ? <Badge toon="goed">tijdelijk conceptadres</Badge> : <Badge toon="fout">open</Badge>}</div>
-            <p className="bron">{b.conceptadres && !b.domein ? `Het concept krijgt het tijdelijke adres ${d.project.slug}.invalid; het echte domein volgt vóór publicatie.` : 'Het domein van de woningwebsite, of een tijdelijk adres voor het concept.'}</p>
+            <p className="bron">{b.conceptadres && !b.domein ? `Het concept krijgt het tijdelijke adres concept-${d.project.id.replace(/-/g, '').slice(0, 10)}.invalid; het echte domein volgt vóór publicatie.` : 'Het domein van de woningwebsite, of een tijdelijk adres voor het concept.'}</p>
             {beheer && <div className="inline-form">{rechten.kantoorbeheer && <><input aria-label="Domein" placeholder="voorbeeldweg1.nl" value={veld.domein ?? ''} onChange={zet('domein')} />
               <button type="button" className="knop knop-lijn knop-klein" disabled={bezig || !(veld.domein ?? '').trim()} onClick={() => beslis('websiteadres', { domein: veld.domein }, 'Domein vastgelegd.')}>Vastleggen</button></>}
               {!b.domein && !b.conceptadres && <button type="button" className="knop knop-lijn knop-klein" disabled={bezig} onClick={() => beslis('websiteadres', { conceptadres: true }, 'Tijdelijk conceptadres gekozen.')}>Tijdelijk conceptadres</button>}</div>}

@@ -64,9 +64,8 @@ import { controleerDomein, domeinVoorstel, geldigNlDomein, wisDomeinCache } from
 test('domeinvoorstel uit het adres en .nl-validatie', () => {
   assert.equal(domeinVoorstel('Denekamperstraat 23B'), 'denekamperstraat23b.nl');
   assert.equal(domeinVoorstel('Markt 27'), 'markt27.nl');
-  assert.equal(domeinVoorstel('Markt 27', 'Wolvega'), 'markt27wolvega.nl', 'met de plaats');
-  assert.equal(domeinVoorstel('Denekamperstraat 23B', 'Ootmarsum'), 'denekamperstraat23bootmarsum.nl');
-  assert.equal(domeinVoorstel('Markt 27', 'x'.repeat(60)), 'markt27.nl', 'te lang met plaats: zonder plaats');
+  assert.equal(domeinVoorstel('Beusemkolkweg 16'), 'beusemkolkweg16.nl', 'benchmark: straat + huisnummer, zonder plaats');
+  assert.equal(domeinVoorstel('x'.repeat(64)), null, 'te lang');
   assert.equal(domeinVoorstel("Hoofdstraat 12-a 'De Eik'"), 'hoofdstraat12adeeik.nl');
   assert.equal(domeinVoorstel('Kerkweg 1, Ëibergen'), 'kerkweg1eibergen.nl');
   assert.equal(domeinVoorstel(null), null);
@@ -93,7 +92,7 @@ test('keuzes via de API: domeinwens met servercontrole, zon/schaduw, organisatie
     const p = (await req('a', 'POST', '/api/projecten', { kantoor_id: A, naam: 'Keuzes A', profiel: 'buitenplaats' })).json();
     await pool.query("UPDATE project SET adres = 'Denekamperstraat 23B', plaats = 'Beuningen' WHERE id = $1", [p.id]);
     const k = (await req('a', 'GET', `/api/projecten/${p.id}/keuzes`)).json();
-    assert.equal(k.domein.voorstel, 'denekamperstraat23bbeuningen.nl', 'voorstel uit adres en plaats');
+    assert.equal(k.domein.voorstel, 'denekamperstraat23b.nl', 'voorstel uit straat en huisnummer, zonder plaats');
     assert.deepEqual(k.fotos, []);
     assert.equal(k.openingsbeeld.gekozen, null);
     wisDomeinCache();

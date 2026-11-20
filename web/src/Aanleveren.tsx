@@ -121,7 +121,7 @@ type DomeinStatus = { soort: 'voorstel' } | { soort: 'ongeldig'; melding: string
 const NL_DOMEIN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.nl$/;
 const normaliseer = (d: string) => d.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '');
 const geldigDomein = (d: string) => NL_DOMEIN.test(d) && !/^..--/.test(d);
-const ONGELDIG = 'Dit is geen geldige .nl-domeinnaam. Gebruik alleen letters, cijfers en koppeltekens, en eindig op .nl (bijvoorbeeld markt27wolvega.nl).';
+const ONGELDIG = 'Dit is geen geldige .nl-domeinnaam. Gebruik alleen letters, cijfers en koppeltekens, en eindig op .nl (bijvoorbeeld beusemkolkweg16.nl).';
 
 /** Woningpagina voor de makelaar: voortgang van de bestaande import, herkende gegevens, de drie keuzes en het concept. */
 export function AangeleverdScherm({ id }: { id: string }) {
@@ -166,7 +166,8 @@ export function AangeleverdScherm({ id }: { id: string }) {
           : klaar ? (
             <dl className="herkend">
               <dt>Adres</dt><dd>{adresregel || <em>niet herkend; Rhadix vult dit aan</em>}</dd>
-              <dt>Woningtype</dt><dd>{k.project.woningtype || <em>niet herkend</em>}</dd>
+              {/* Woningtype is niet nodig voor de website (het ontwerp hangt er niet van af): alleen tonen als het herkend is. */}
+              {k.project.woningtype && <><dt>Woningtype</dt><dd>{k.project.woningtype}</dd></>}
               <dt>Foto's</dt><dd>{k.fotos.length}</dd>
               <dt>Gegevens</dt><dd>{gegevens}{aandacht > 0 ? ` (${aandacht} ${aandacht === 1 ? 'vraagt' : 'vragen'} nog aandacht; Rhadix controleert dit)` : ''}</dd>
             </dl>
@@ -218,7 +219,7 @@ function DomeinKeuze({ id, k, waarde, eigen, onWijzig, onBewaard }: {
           <label htmlFor="domein">Gewenste domeinnaam</label>
           <input id="domein" value={waarde} onChange={(e) => { onWijzig(e.target.value); setStatus(null); }}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (!bezig && waarde.trim()) void controleer(); } }}
-            placeholder="bijvoorbeeld markt27wolvega.nl" autoComplete="off" inputMode="url" spellCheck={false} aria-describedby="domein-status" />
+            placeholder="bijvoorbeeld beusemkolkweg16.nl" autoComplete="off" inputMode="url" spellCheck={false} aria-describedby="domein-status" />
         </div>
         <button type="button" className="knop knop-primair" disabled={bezig || !waarde.trim()} onClick={() => void controleer()}>{bezig ? 'Controleren…' : 'Controleer domeinnaam'}</button>
       </div>
@@ -361,7 +362,7 @@ function ConceptAanmaken({ id, k, c, domein, herlaad }: { id: string; k: Keuzes;
         <li><span className="vink-ok">✓</span><span>Gegevens uit de brochure: worden overgenomen als uitgangspunt; Rhadix controleert ze vóór publicatie.</span></li>
         <li><span className="vink-ok">✓</span><span>Domeinnaam: {domeinTekst}</span></li>
         <li><span className={foto ? 'vink-ok' : 'vink-open'}>{foto ? '✓' : '○'}</span><span>Homepagefoto: {foto ? 'gekozen' : 'kies eerst een foto (stap 2)'}</span></li>
-        <li><span className={zon ? 'vink-ok' : 'vink-open'}>{zon ? '✓' : '○'}</span><span>Zon- en schaduwvisualisatie: {!k.zonschaduw ? 'kies ja of nee (stap 3)' : !k.zonschaduw.gewenst ? 'niet gewenst' : k.zonschaduw.bestand_id ? 'aangevraagd' : 'kies een foto (stap 3)'}</span></li>
+        <li><span className={zon ? 'vink-ok' : 'vink-open'}>{zon ? '✓' : '○'}</span><span>Zon- en schaduwvisualisatie: {!k.zonschaduw ? 'kies ja of nee (stap 3)' : !k.zonschaduw.gewenst ? 'niet gewenst' : k.zonschaduw.bestand_id ? 'aangevraagd. De simulatie zelf is nog niet beschikbaar; in de afgeschermde preview staat een interne plaatshouder die niet wordt gepubliceerd' : 'kies een foto (stap 3)'}</span></li>
       </ul>
 
       {lopend && <VerwerkingVoortgang key={lopend.id} projectId={id} start={lopend} onEinde={einde} />}

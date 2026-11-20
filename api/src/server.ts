@@ -13,6 +13,7 @@ import { generatorStatus, profielCatalogus, profielen, standaardOntwerpsysteem }
 import { COOKIE, beeindigSessie, leesCookie, meldAan, sessieCookie, sessieGebruiker, wisCookie } from './auth.ts';
 import { meldAanViaRhadix, SSO_MELDING, ssoActief, wisSsoCache, type Huisstijl, type SsoFout } from './rhadixsso.ts';
 import { isThema, themaVoor, type Thema } from './themas.ts';
+import { aanvraagBijConcept, metInternePlaatshouder } from './zonschaduw.ts';
 import { controleerDomein, geldigNlDomein, legDomeinwens, legZonschaduw, leesKeuzes } from './keuzes.ts';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { leesKantoor, lijstKantoren, maakKantoor, valideerKantoor, wijzigKantoor } from './kantoren.ts';
@@ -545,23 +546,30 @@ export function bouwApp() {
   app.get<{ Params: { token: string; '*': string } }>('/api/voorbeeld/:token/*', async (req, reply) => {
     const tok = req.params.token;
     if (!/^[A-Za-z0-9_-]{40,64}$/.test(tok)) return reply.code(404).send({ fout: 'Niet gevonden' });
-    let map: string | undefined;
+    let rij: { map: string; project_id: string; aangemaakt_op: Date } | undefined;
+    const KOLOMMEN = 'SELECT map, project_id, aangemaakt_op FROM concept WHERE voorbeeld_token = $1';
     if (!config.voorbeeldAfgeschermd || geldigVoorbeeldCookie(req, tok)) {
-      map = (await pool.query('SELECT map FROM concept WHERE voorbeeld_token = $1', [tok])).rows[0]?.map;
+      rij = (await pool.query(KOLOMMEN, [tok])).rows[0];
     } else {
       // Afgeschermd: alleen een aangemelde gebruiker die het concept mag zien (RLS: eigen kantoor of platform).
       const a = await aanmelding(req);
-      if (a && 'gebruiker' in a) map = await alsGebruiker(a.gebruiker, async (c) => (await c.query('SELECT map FROM concept WHERE voorbeeld_token = $1', [tok])).rows[0]?.map);
+      if (a && 'gebruiker' in a) rij = await alsGebruiker(a.gebruiker, async (c) => (await c.query(KOLOMMEN, [tok])).rows[0]);
       // De preview draait in een sandbox (anonieme herkomst): de browser stuurt daar het gewone inlogcookie niet
       // mee. Daarom krijgt de aangemelde gebruiker een kortlevend, ondertekend cookie voor alleen dit concept.
-      if (map) reply.header('set-cookie', voorbeeldCookie(tok));
+      if (rij) reply.header('set-cookie', voorbeeldCookie(tok));
     }
-    const b = map && conceptBestand(map, req.params['*']);
+    const b = rij && conceptBestand(rij.map, req.params['*']);
     if (!b) return reply.code(404).send({ fout: 'Niet gevonden' });
     reply.header('content-security-policy', "sandbox allow-scripts; frame-ancestors 'self'").header('referrer-policy', 'no-referrer')
       .header('x-robots-tag', 'noindex, nofollow').header('x-content-type-options', 'nosniff').header('cache-control', 'private, max-age=300');
     // De sandbox geeft de preview een anonieme herkomst; lettertypes worden altijd met CORS opgehaald.
     if (b.type === 'font/woff2') reply.header('access-control-allow-origin', '*');
+    // Alleen in deze afgeschermde preview: interne plaatshouder voor een aangevraagde zon- en schaduwvisualisatie.
+    // Het bestand op schijf (de gegenereerde site) blijft ongewijzigd.
+    if (b.type.startsWith('text/html') && /(^|\/)index\.html$|^$/.test(req.params['*'])) {
+      const aanvraag = await aanvraagBijConcept(pool, rij!.project_id, rij!.aangemaakt_op);
+      if (aanvraag?.gewenst) return reply.type(b.type).send(metInternePlaatshouder(readFileSync(b.pad, 'utf8'), aanvraag));
+    }
     return reply.type(b.type).send(createReadStream(b.pad));
   });
 

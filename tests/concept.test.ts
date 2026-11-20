@@ -1,6 +1,7 @@
 // Stap 6: conceptgeneratie en preview met de bestaande generator (automatische compositie, mp bouw)
 // en de kwaliteitscontrole van Design System 1.0 (mp kwaliteit). Markt 27 als praktijkvoorbeeld.
 // Bouwt echt (±1–2 minuten). Niets wordt gepubliceerd; de productie-instantie blijft ongewijzigd.
+import { tijdelijkAdres } from '../api/src/publiek.ts';
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -137,12 +138,12 @@ test('Markt 27: vrijgave met alleen de verplichte punten, concept v1, preview, v
   assert.equal(woning.feiten.find((f: { sleutel: string }) => f.sleutel === 'kamers').verificatie, 'onbevestigd', 'niet als opgelost gemarkeerd');
   // Intern concept zonder bevestigde rechten: eerlijk vastgelegd (niet bevestigd), tijdelijk onbereikbaar adres.
   assert.equal(woning.rechten.bevestigd, false);
-  assert.equal(woning.site.canonical, 'https://linde-makelaars-markt-27.invalid/');
-  assert.deepEqual(v1.uitgangspunten.voor_publicatie, { publicatierechten: 'niet bevestigd', websiteadres: 'tijdelijk: https://linde-makelaars-markt-27.invalid/ (niet bereikbaar)' });
+  assert.equal(woning.site.canonical, `https://${tijdelijkAdres(P)}/`); assert.match(woning.naam, /^Markt 27/, 'publieke naam = objectadres');
+  assert.deepEqual(v1.uitgangspunten.voor_publicatie, { publicatierechten: 'niet bevestigd', websiteadres: `tijdelijk: https://${tijdelijkAdres(P)}/ (niet bereikbaar)` });
   assert.ok(v1.indeling.samenvatting.length === 4 && v1.indeling.meldingen.every((m: { actie: string }) => m.actie !== 'conceptgeneratie'));
   const site1 = join(config.opslag, v1.map, 'site', 'index.html');
   const html = readFileSync(site1, 'utf8');
-  assert.match(html, /Markt 27/); assert.match(html, /linde-makelaars-markt-27\.invalid/);
+  assert.match(html, /Markt 27/); assert.ok(html.includes(tijdelijkAdres(P)));
   assert.doesNotMatch(readFileSync(join(config.opslag, v1.map, 'woning', b.project.slug, 'manifest.json'), 'utf8'), /vve_bijdrage/, 'financieel feit niet in het manifest');
   assert.equal((await pool.query('SELECT status FROM project WHERE id = $1', [P])).rows[0].status, 'interne_review');
 
