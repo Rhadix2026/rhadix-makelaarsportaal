@@ -10,7 +10,8 @@ import { Dashboard, ProjectDetail, ProjectFormulier } from './Projecten.tsx';
 import { AanleverScherm } from './Aanlevering.tsx';
 import { BeoordelingScherm } from './Beoordeling.tsx';
 import { ConceptScherm } from './Concepten.tsx';
-import { eenvoudigeAanlevering, magProjectenAanmaken } from './onderdelen/rechten.ts';
+import { eenvoudigeAanlevering, magGebruikersInzien, magProjectenAanmaken } from './onderdelen/rechten.ts';
+import { GebruikersScherm } from './Gebruikers.tsx';
 import { AangeleverdScherm, AanleverFormulier } from './Aanleveren.tsx';
 import { merkUitUrl, zetThema } from './themas.ts';
 
@@ -26,6 +27,8 @@ function useHash() {
 
 function Scherm({ hash, ik }: { hash: string; ik: Ik }) {
   let m;
+  // Gebruikers en rollen (alleen lezen): platformbeheer en kantoorbeheerder; anders een melding.
+  if (hash === '#/gebruikers') return magGebruikersInzien(ik) ? <GebruikersScherm /> : <p className="melding melding-fout">Alleen voor de kantoorbeheerder of platformbeheer.</p>;
   // Vereenvoudigde aanlevering (stap 3A.1): eenvoudig formulier, geen kantorenbeheer in de interface.
   if (eenvoudigeAanlevering(ik)) {
     if (hash === '#/aanleveren' || hash === '#/projecten/nieuw') return <AanleverFormulier ik={ik} />;
@@ -88,6 +91,7 @@ function App() {
         links={<>
           <a className="nav-link" href="#/projecten" aria-current={actief('#/projecten')}>Woningprojecten</a>
           {!eenvoudigeAanlevering(ik) && <a className="nav-link" href="#/kantoren" aria-current={actief('#/kantoren')}>Kantoren</a>}
+          {magGebruikersInzien(ik) && <a className="nav-link" href="#/gebruikers" aria-current={actief('#/gebruikers')}>Gebruikers<span className="nav-lang"> en rollen</span></a>}
           {ik.platformbeheer && <a className="nav-link" href="#/systeem" aria-current={actief('#/systeem')}>Systeem</a>}
         </>}
         rechts={<>

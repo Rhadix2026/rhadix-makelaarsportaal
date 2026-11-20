@@ -14,6 +14,7 @@ import { COOKIE, beeindigSessie, leesCookie, meldAan, sessieCookie, sessieGebrui
 import { meldAanViaRhadix, SSO_MELDING, ssoActief, wisSsoCache, type Huisstijl, type SsoFout } from './rhadixsso.ts';
 import { isThema, themaVoor, type Thema } from './themas.ts';
 import { aanvraagBijConcept, metInternePlaatshouder } from './zonschaduw.ts';
+import { toegangsoverzicht } from './toegang.ts';
 import { controleerDomein, geldigNlDomein, legDomeinwens, legZonschaduw, leesKeuzes } from './keuzes.ts';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { leesKantoor, lijstKantoren, maakKantoor, valideerKantoor, wijzigKantoor } from './kantoren.ts';
@@ -222,6 +223,22 @@ export function bouwApp() {
   });
 
   // ── Makelaarskantoren ───────────────────────────────────────────────────
+  // ── Gebruikers en rollen (alleen lezen) ────────────────────────────────
+  // Beheer van gebruikers, rollen, licenties en applicatietoegang gebeurt uitsluitend centraal in het
+  // Rhadix-platform. Platformbeheer krijgt de verwijzing daarheen; een kantoorbeheerder ziet alleen
+  // de leden van het eigen kantoor; een makelaar heeft geen toegang. Er is geen schrijfroute.
+  app.get('/api/toegang', async (req, reply) => {
+    const wie = await ik(req.gebruiker);
+    const o = await alsGebruiker(req.gebruiker, (c) => toegangsoverzicht(c, wie.platformbeheer));
+    if (!o) return reply.code(403).send({ fout: 'Alleen voor de kantoorbeheerder of platformbeheer' });
+    return {
+      rol: wie.platformbeheer ? 'platformbeheer' : 'kantoorbeheerder',
+      // Alleen voor platformbeheer, en alleen het vast ingestelde platformadres (https, zie rhadixsso.ts).
+      centraal_beheer: wie.platformbeheer && ssoActief() && config.sso.platform ? `${config.sso.platform}/` : null,
+      ...o,
+    };
+  });
+
   app.get('/api/kantoren', async (req) => alsGebruiker(req.gebruiker, lijstKantoren));
 
   app.get<{ Params: { id: string } }>('/api/kantoren/:id', async (req, reply) => {

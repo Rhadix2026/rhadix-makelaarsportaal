@@ -452,3 +452,16 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 .concept-stappen li { display: flex; gap: 8px; align-items: baseline; }
 .concept-stappen .vink-ok { color: #15803d; font-weight: 700; }
 .concept-stappen .vink-open { color: var(--tekst3); font-weight: 700; }
+
+/* ── Gebruikers en rollen (alleen lezen) ── */
+.toegang-uitleg { margin-top: 14px; }
+.toegang-uitleg summary { cursor: pointer; font-weight: 600; color: var(--navy); }
+.toegang-uitleg ol { margin: 10px 0 0; padding-left: 1.3em; display: grid; gap: 6px; color: var(--tekst2); }
+/* Smalle schermen: kortere menulabels; het menu schuift binnen de balk in plaats van de pagina te verbreden. */
+.nav-links-groep { min-width: 0; }
+@media (max-width: 520px) {
+  .nav-lang { display: none; }
+  .nav-links { overflow-x: auto; scrollbar-width: none; }
+  .nav-links::-webkit-scrollbar { display: none; }
+  .nav-link { white-space: nowrap; }
+}

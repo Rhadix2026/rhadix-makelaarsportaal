@@ -27,3 +27,7 @@ export const magProjectenAanmaken = (ik: Ik) => ik.platformbeheer || ik.kantoren
  *  (voorlopig alleen Morskieft). Alleen de interface: zelfde API's, rechten en workflow. Platformbeheer
  *  houdt altijd het uitgebreide beheer. */
 export const eenvoudigeAanlevering = (ik: Ik) => !ik.platformbeheer && !!ik.thema;
+
+/** Gebruikers en rollen inzien (alleen lezen): platformbeheer (alle kantoren) en de kantoorbeheerder
+ *  (eigen kantoor). Een makelaar niet. De API controleert dit zelf (GET /api/toegang → 403). */
+export const magGebruikersInzien = (ik: Ik) => ik.platformbeheer || ik.kantoren.some((k) => k.rol === 'kantoorbeheerder');
